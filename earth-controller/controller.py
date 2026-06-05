@@ -102,7 +102,13 @@ class EarthDriver:
                r.querySelectorAll('*')) { if (el.tagName==='INPUT'||
                el.tagName==='TEXTAREA') return el; if (el.shadowRoot){
                const x=find(el.shadowRoot); if(x) return x; } } return null; };
-               const i=find(document); if(i){ i.focus(); i.value=''; } }""")
+               const i=find(document); if(i){ i.focus(); } }""")
+        # 前回の検索語を実キーイベントで全消去する。i.value='' は DOM 値を
+        # 消すだけで Earth の検索 UI 内部状態に残り、追記されてしまう
+        # （例: 「東京タワー」+「エッフェル塔」→「東京タワーエッフェル塔」）。
+        await page.keyboard.press("Control+A")
+        await page.keyboard.press("Delete")
+        await page.wait_for_timeout(100)
         await page.keyboard.type(place, delay=40)
         await page.wait_for_timeout(1500)     # オートコンプリート整定
         await page.keyboard.press("Enter")

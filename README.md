@@ -120,11 +120,17 @@ curl     http://localhost:8003/tour/list         # list tours
 
 Per stop it flies to the place and the avatar narrates it automatically.
 
-### Interrupt with 🎤
+### Interrupt with 🎤 / drive Earth by voice
 
 Press the 🎤 button (bottom-right of the VRM page) and speak; the avatar answers
 by voice. **Starting a recording auto-pauses the tour**, which resumes when the
 answer finishes.
+
+You can also **command a destination by voice** — say e.g. *"Take me to Tokyo
+Tower"* / 「東京タワーを案内して」 and **Google Earth flies there and the
+background switches**, no `curl` needed. When the transcript carries a "go/guide"
+intent, an LLM extracts the place name and a flyTo is sent to earth-bridge. The
+flyTo runs in parallel with narration, so the avatar still describes the place.
 
 ### One-off flyTo (debug)
 

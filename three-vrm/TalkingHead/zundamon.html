@@ -336,13 +336,20 @@
             }
             setupLiveBackground();
 
+            // --- アバターの大きさ・画面内の位置（ここを変えて調整できる）---
+            // AVATAR_DISTANCE: 大きいほどカメラが引いてアバターが小さく写る（元は 1.2）
+            const AVATAR_DISTANCE = 1.8;
+            // AVATAR_OFFSET_X / _Y: アバターのワールド位置。X- で画面左・Y- で画面下へ
+            const AVATAR_OFFSET_X = -0.4;
+            const AVATAR_OFFSET_Y = -0.15;
+
             const camera = new THREE.PerspectiveCamera(
                 30,
                 window.innerWidth / window.innerHeight,
                 0.1,
                 20,
             );
-            camera.position.set(0, 1.35, 1.2);
+            camera.position.set(0, 1.35, AVATAR_DISTANCE);
             camera.lookAt(0, 1.4, 0);
 
             const light = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -509,6 +516,13 @@
                     // Face camera toward front
                     VRMUtils.rotateVRM0(vrm);
 
+                    // 画面左下へ寄せる（大きさは AVATAR_DISTANCE 側で調整）
+                    gltf.scene.position.set(
+                        AVATAR_OFFSET_X,
+                        AVATAR_OFFSET_Y,
+                        0,
+                    );
+
                     // 既定ポーズ: 両手を下ろす (T-pose → 自然立ち)
                     applyRestPose();
 
@@ -582,6 +596,13 @@
                     }
                     if (msg.type === "error") {
                         console.warn("server error:", msg.error);
+                        return;
+                    }
+                    if (msg.type === "flyto") {
+                        // 音声で行き先が指示されたときの移動フィードバック。
+                        if (micHint)
+                            micHint.textContent =
+                                "🛫 " + (msg.place || "") + " へ移動中…";
                         return;
                     }
                     if (msg.type !== "speak" && msg.type !== undefined) return;

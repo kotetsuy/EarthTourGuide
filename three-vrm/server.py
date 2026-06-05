@@ -18,11 +18,25 @@ from aiohttp import web
 VOICEVOX_URL = os.getenv("VOICEVOX_URL", "http://localhost:50021")
 TTLLM_URL = os.getenv("TTLLM_URL", "http://localhost:8001")
 TTLLM_TIMEOUT = float(os.getenv("TTLLM_TIMEOUT", "180"))
+# 音声で「〜を案内して」等の移動・案内コマンドが来たら earth-bridge へ flyTo を送る。
+EARTH_BRIDGE_URL = os.getenv("EARTH_BRIDGE_URL", "http://localhost:8002")
+# flyTo 後この秒数だけ待ってから情報パネルを閉じる (背景を綺麗にする)。
+FLY_DISMISS_DELAY = float(os.getenv("FLY_DISMISS_DELAY", "8"))
 VRM_DIR = os.path.expanduser("~/AIassistant/vroid")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "TalkingHead")
 IMAGES_DIR = os.getenv("IMAGES_DIR", os.path.expanduser("~/AIzunda/images"))
 
 clients: weakref.WeakSet = weakref.WeakSet()
+
+# flyTo など、リクエストの寿命を超えて走らせたいタスクの参照保持 (GC 回避)。
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
 
 VOWEL_TO_VISEME = {
     "a": "aa", "i": "I", "u": "U", "e": "E", "o": "O",
@@ -326,6 +340,80 @@ def _split_sentences(buf: str, flush: bool = False) -> tuple[list[str], str]:
     return out, buf
 
 
+# 移動・案内の意図を粗く拾う事前フィルタ。該当時のみ LLM に行き先を抽出させる
+# (普通の雑談で無駄な LLM 呼び出し・誤 flyTo を防ぐ)。最終判断は LLM が行う。
+_GUIDE_INTENT = re.compile(
+    r"案内|連れ|ガイド|ツアー|行って|行き|向か|訪れ|訪ね|見せ|見たい|"
+    r"飛んで|飛ぼ|移動|寄って|まで|に行|へ行"
+)
+
+_DEST_EXTRACT_SYSTEM = (
+    "あなたは音声コマンドから『行き先』だけを抜き出す抽出器です。"
+    "ユーザーの発話に、ある場所へ移動・案内してほしいという意図があれば、"
+    "その場所の名前だけを返してください (例:『東京タワーを案内して』→『東京タワー』)。"
+    "Google Earth の検索に使うので、地名・観光地・建物などの固有名詞を簡潔に。"
+    "移動・案内の意図がない、または場所を特定できない場合は、NONE とだけ返してください。"
+    "余計な説明・記号・引用符は一切付けないこと。"
+)
+
+
+async def _extract_destination(transcript: str) -> str | None:
+    """transcript に移動・案内の意図があれば行き先(地名)を返す。なければ None。"""
+    text = transcript.strip()
+    if not text or not _GUIDE_INTENT.search(text):
+        return None
+    payload = {
+        "text": text,
+        "system": _DEST_EXTRACT_SYSTEM,
+        "temperature": 0.0,
+        "max_tokens": 32,
+    }
+    timeout = aiohttp.ClientTimeout(total=20)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(f"{TTLLM_URL}/chat", json=payload) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+    except aiohttp.ClientError:
+        return None
+    reply = (data.get("reply") or "").strip()
+    # 1 行目だけを採り、前後の記号・引用符・句点を除去する。
+    place = reply.splitlines()[0].strip().strip("　「」『』\"'。.") if reply else ""
+    if not place or "NONE" in place.upper():
+        return None
+    return place
+
+
+async def _flyto_from_transcript(transcript: str, turn_id: str) -> None:
+    """発話から行き先を抽出し earth-bridge へ flyTo→(待機)→dismiss を送る。
+
+    ナレーション生成と並行して背景で走らせる前提 (リクエストをブロックしない)。
+    """
+    place = await _extract_destination(transcript)
+    if not place:
+        return
+    await _broadcast({"type": "flyto", "turn_id": turn_id, "place": place})
+    timeout = aiohttp.ClientTimeout(total=15)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                f"{EARTH_BRIDGE_URL}/control",
+                json={"cmd": "flyto", "place": place},
+            ) as resp:
+                if resp.status != 200:
+                    return
+            # 到着を待ってから情報パネルを閉じ、背景を綺麗にする。
+            await asyncio.sleep(FLY_DISMISS_DELAY)
+            async with session.post(
+                f"{EARTH_BRIDGE_URL}/control",
+                json={"cmd": "dismiss"},
+            ):
+                pass
+    except aiohttp.ClientError:
+        return
+
+
 async def voice_chat_speak_stream_handler(request: web.Request) -> web.Response:
     """音声 → ttllm /voice_chat_stream → 文単位で VOICEVOX + WS ブロードキャスト。
 
@@ -450,6 +538,9 @@ async def voice_chat_speak_stream_handler(request: web.Request) -> web.Response:
                             "turn_id": turn_id,
                             "text": transcript,
                         })
+                        # 行き先指示なら Earth を flyTo (ナレーション生成と並行)。
+                        if transcript:
+                            _spawn(_flyto_from_transcript(transcript, turn_id))
                     elif t == "token":
                         buf += msg.get("text", "") or ""
                         sentences, buf = _split_sentences(buf, flush=False)

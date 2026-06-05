@@ -30,6 +30,10 @@ LLAMA_HOST="127.0.0.1"
 LLAMA_PORT="8080"
 LLAMA_CTX="8192"
 LLAMA_NGL="99"
+# 並列スロット数。2 にすると音声コマンドの行き先抽出(短い /chat)を
+# ナレーション生成と同時に処理でき、flyTo が即座に始まる。
+# -c(=8192) はスロットに分割されるため (2 なら各 4096)、追加 VRAM はほぼ不要。
+LLAMA_PARALLEL="2"
 
 VOICEVOX_CONTAINER="voicevox_engine"
 VOICEVOX_IMAGE="voicevox/voicevox_engine:cpu-ubuntu20.04-latest"
@@ -113,7 +117,7 @@ wait_http "VOICEVOX" "http://localhost:50021/version" 60
 LLAMA_CMD="HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION} \
 ROCM_PATH=${ROCM_PATH} HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES} \
 LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
-${LLAMA_BIN} -m ${QWEN_MODEL} --host ${LLAMA_HOST} --port ${LLAMA_PORT} -ngl ${LLAMA_NGL} -c ${LLAMA_CTX} -fit off"
+${LLAMA_BIN} -m ${QWEN_MODEL} --host ${LLAMA_HOST} --port ${LLAMA_PORT} -ngl ${LLAMA_NGL} -c ${LLAMA_CTX} --parallel ${LLAMA_PARALLEL} -fit off"
 new_window "llama" "$LLAMA_CMD"
 wait_http "llama-server" "http://${LLAMA_HOST}:${LLAMA_PORT}/health" 600
 

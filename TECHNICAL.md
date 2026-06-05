@@ -32,6 +32,9 @@ Voice dialogue (reused from AIassistant, 🎤 interrupt):
    Browser 🎤 → three-vrm /voice_chat_speak_stream
             → ttllm(8001): WhisperX (STT) + llama-server(8080, Qwen3.6)
             → split at sentence boundaries → VOICEVOX(50021) → WS push audio+visemes
+            └─ on transcript, if it carries a "go/guide" intent:
+               ttllm /chat extracts the place → earth-bridge /control flyto
+               (runs in parallel with narration; see §5.1)
 ```
 
 ### Services
@@ -136,6 +139,24 @@ Key points:
   resumes; reconnect is retried every 2 s.
 - Lip-sync, idle motion and the 🎤 flow are untouched — only the background
   source changed.
+
+### 5.1 Voice destination commands (🎤 → flyTo)
+
+`voice_chat_speak_stream_handler` watches the SSE `transcript` event from ttllm.
+A cheap regex pre-filter (`_GUIDE_INTENT`) checks for a move/guide intent
+(案内 / 行って / 連れて …); only then does it call ttllm `/chat` with an
+extraction-only system prompt that returns **just the place name** (or `NONE`).
+If a place comes back, a fire-and-forget task POSTs `earth-bridge /control`
+`{cmd:flyto, place}` and, after `FLY_DISMISS_DELAY`s, `{cmd:dismiss}`.
+
+- The extraction runs as a **background task** (`_spawn`) so it never blocks the
+  narration token stream or the HTTP response.
+- The extraction `/chat` and the narration stream hit llama-server **at the same
+  time**, so `start_all.sh` launches it with `--parallel 2` (`LLAMA_PARALLEL`).
+  This partitions the existing `-c 8192` context into 2×4096 slots (**no extra
+  VRAM**), letting the tiny flyTo extraction overtake the long narration instead
+  of queueing behind it — the camera starts flying while the avatar talks.
+- The browser shows a `🛫 <place> へ移動中…` hint on the `flyto` WS event.
 
 ---
 

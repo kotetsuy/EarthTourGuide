@@ -216,10 +216,14 @@
             scene.background = new THREE.Color(0x1a1a2e);
 
             // ---- 背景画像のランダムローテーション (5 分ごと) ----
+            // Earth ライブ背景 (earth-bridge /stream) が有効なときは停止し、
+            // ライブが落ちたら自動でこの静止画ローテーションに戻る。
             const BG_INTERVAL_MS = 5 * 60 * 1000;
             const bgTexLoader = new THREE.TextureLoader();
             let bgList = [];
             let bgIdx = -1;
+            let liveActive = false;       // Earth ライブ背景が描画中か
+            let bgStaticTimer = null;     // 静止画ローテーションの setInterval id
 
             function pickNextBgIndex() {
                 if (bgList.length <= 1) return 0;
@@ -231,6 +235,7 @@
             }
 
             function swapBackground() {
+                if (liveActive) return;       // ライブ背景中は静止画を出さない
                 if (bgList.length === 0) return;
                 const n = pickNextBgIndex();
                 bgIdx = n;
@@ -246,16 +251,82 @@
                 );
             }
 
+            function startStaticRotation() {
+                if (liveActive || bgStaticTimer || bgList.length === 0) return;
+                swapBackground();
+                bgStaticTimer = setInterval(swapBackground, BG_INTERVAL_MS);
+            }
+
             fetch("/images_list")
                 .then((r) => r.json())
                 .then((d) => {
                     bgList = d.images || [];
-                    if (bgList.length > 0) {
-                        swapBackground();
-                        setInterval(swapBackground, BG_INTERVAL_MS);
-                    }
+                    startStaticRotation();
                 })
                 .catch((e) => console.warn("images_list fetch failed:", e));
+
+            // ---- Earth ライブ背景 (earth-bridge: ws://<host>:8002/stream) ----
+            // JPEG フレームを受信し scene.background のテクスチャを毎フレーム更新する。
+            // 接続できない / 切れた場合は静止画ローテーションにフォールバック。
+            const EARTH_STREAM_URL =
+                `ws://${location.hostname || "localhost"}:8002/stream`;
+            let liveTexture = null;
+
+            function setupLiveBackground() {
+                let ws;
+                const connect = () => {
+                    ws = new WebSocket(EARTH_STREAM_URL);
+                    ws.binaryType = "blob";
+                    ws.onmessage = async (ev) => {
+                        let bmp;
+                        try {
+                            // flipY 済みで取り込み、texture 側の flip は無効化
+                            // （ImageBitmap の three.js flip 警告/上下反転を回避）
+                            bmp = await createImageBitmap(ev.data, {
+                                imageOrientation: "flipY",
+                            });
+                        } catch (e) {
+                            return; // 壊れたフレームは捨てる
+                        }
+                        if (!liveTexture) {
+                            liveTexture = new THREE.Texture(bmp);
+                            liveTexture.colorSpace = THREE.SRGBColorSpace;
+                            liveTexture.flipY = false;
+                        } else {
+                            // 古い ImageBitmap を解放してから差し替え
+                            if (liveTexture.image && liveTexture.image.close) {
+                                liveTexture.image.close();
+                            }
+                            liveTexture.image = bmp;
+                        }
+                        liveTexture.needsUpdate = true;
+                        scene.background = liveTexture;
+                        if (!liveActive) {
+                            liveActive = true;
+                            if (bgStaticTimer) {
+                                clearInterval(bgStaticTimer);
+                                bgStaticTimer = null;
+                            }
+                            console.log("Earth live background active");
+                        }
+                    };
+                    ws.onclose = () => {
+                        if (liveActive) {
+                            liveActive = false;
+                            console.warn(
+                                "Earth live background lost; static fallback",
+                            );
+                            startStaticRotation();
+                        }
+                        setTimeout(connect, 2000); // 再接続を試みる
+                    };
+                    ws.onerror = () => {
+                        try { ws.close(); } catch (e) {}
+                    };
+                };
+                connect();
+            }
+            setupLiveBackground();
 
             const camera = new THREE.PerspectiveCamera(
                 30,

@@ -224,3 +224,6 @@ HANDOFF*
 
 # EarthTourGuide: feasibility spike captured frames
 earth-controller/spike_out/
+
+# EarthTourGuide: local working status note (not tracked)
+STATUS.md

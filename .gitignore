@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AI
+.claude/
+HANDOFF*
+
+
+# EarthTourGuide: feasibility spike captured frames
+earth-controller/spike_out/

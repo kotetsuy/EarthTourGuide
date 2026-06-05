@@ -1,118 +1,165 @@
-# EarthTourGuide（日本語）
+# EarthTourGuide — セットアップ & 実行手順（日本語）
 
-Google Earth 上を巡りながら、ずんだもん（VRM）が音声で解説する
+Google Earth 上を巡りながら、VRM アバター（Koteko／ずんだもん）が音声で解説する
 「ワールドツアーガイド」デモ。展示会での実演を想定し、**安定性と見栄え**を最優先する。
 
-ベースは [kotetsuy/AIassistant](https://github.com/kotetsuy/AIassistant)
-（Voice → STT → LLM → TTS → VRM リップシンクをフルローカルで動かすテンプレート）。
-本リポジトリはそのパイプラインを流用し、背景を **Google Earth のライブ映像** に
-差し替え、ツアー進行ロジックを追加する。
+- このドキュメントは **git clone から起動まで**の手順書です。
+- 仕組み・設計の詳細は **[TECHNICALJ.md](TECHNICALJ.md)**（English: [TECHNICAL.md](TECHNICAL.md)）を参照。
+- English setup guide: **[README.md](README.md)**。
 
-## 体験イメージ
+---
 
-- 画面に地球が映り、その手前にずんだもん（VRM）が立つ
-- ずんだもんが地名を紹介しながら、地球がその場所へ滑らかに飛ぶ（flyTo）
-- ユーザーが🎤で質問すると、その場所について音声で答える（既存の音声対話を流用）
+## 1. 前提条件
 
-## アーキテクチャ
-
-```
-earth-controller (Playwright + system Chrome + CDP)
-  └─ earth.google.com を操作（検索ボックス経由で滑らかな flyTo）
-        ↓ CDP Page.startScreencast（JPEG フレーム連続取得）
-   earth-bridge (port 8002, WebSocket ハブ)
-        ↓ WS /stream でフレーム配信
-   three-vrm (port 8000) ← 背景テクスチャとして描画
-        └─ その手前に Koteko/ずんだもん VRM をオーバーレイ
-
-音声対話（流用）:
-   Browser 🎤 → ttllm(8001) → WhisperX(STT) + llama-server(8080, Qwen3.6)
-              → 文境界で分割 → VOICEVOX(50021) → WS で音声+visemes を push
-
-ツアー進行:
-   ツアー定義(JSON) に沿って次の地点へ flyTo → LLM が解説生成 → ずんだもんが喋る
-```
-
-> **フェーズ0で実証済み**: 本家 earth.google.com で滑らかな flyTo は
-> **検索ボックス経由でのみ**可能（URL 直書きは再読込＝瞬間移動）。CDP screencast は
-> 1280×720 JPEG で約22fps。詳細は `earth-controller/SPIKE_FINDINGS.md`。
-
-## ディレクトリ構成
-
-| パス | 役割 | 形態 |
-| --- | --- | --- |
-| `earth-controller/` | Playwright + CDP screencast、Earth 操作・flyTo | 新規 |
-| `earth-bridge/` | フレーム → WebSocket 中継ハブ (port 8002) | 新規 |
-| `tour/tours/` | ツアー定義 JSON（地名・座標・解説プロンプト） | 新規 |
-| `three-vrm/` | aiohttp + VRM ビューア (port 8000)。背景ライブ化の改造が入る | AIassistant からコピー |
-| `ttllm/` | FastAPI bridge (WhisperX + llama.cpp) (port 8001) | symlink |
-| `voicevox/` | VOICEVOX Engine 関連 (port 50021) | symlink |
-| `whisperX-rocm/` | ROCm 版 WhisperX | symlink |
-| `qwen3.6/` | Qwen3.6 GGUF モデル | symlink |
-| `llama.cpp/` | 推論バイナリ | symlink |
-
-流用資産（`ttllm` / `voicevox` / `whisperX-rocm` / `qwen3.6` / `llama.cpp`）は
-`../AIassistant/` への **symlink**。パイプライン側を AIassistant で直すと自動反映される。
-`three-vrm` のみ背景ライブ化の改造が入るため **コピーして差分管理**。
-
-## ポート一覧
-
-| サービス | Port |
+| 項目 | 要件 |
 | --- | --- |
-| VOICEVOX Engine | 50021 |
-| llama-server (Qwen3.6) | 8080 |
-| ttllm | 8001 |
-| three-vrm | 8000 |
-| **earth-bridge** | **8002** |
+| OS | Ubuntu 24.04 |
+| GPU / ROCm | AMD gfx1151（Ryzen AI Max+ 395 等）/ ROCm 7.x |
+| Python | 3.12 |
+| 必須コマンド | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
+| ディスプレイ | ヘッド付き Chrome を出す `DISPLAY`（本機では GNOME Remote Desktop の `:10.0`） |
 
-## セットアップ
+> **重要:** 本リポジトリは音声パイプライン（STT/LLM/TTS/VRM）を
+> [kotetsuy/AIassistant](https://github.com/kotetsuy/AIassistant) から
+> **相対 symlink（`../AIassistant/...`）で流用**します。先に AIassistant を
+> **兄弟ディレクトリとして配置・セットアップ**しておく必要があります。
+
+---
+
+## 2. ベース（AIassistant）の準備
 
 ```bash
-# Earth 操作用の venv（Playwright は system Chrome を使うので chromium DL は不要）
+cd ~
+git clone https://github.com/kotetsuy/AIassistant.git
+cd AIassistant
+# AIassistant の README に従って以下を用意:
+#   - llama.cpp をビルド (~/llama.cpp/build/bin/llama-server)
+#   - Qwen3.6 GGUF モデル (qwen3.6/)
+#   - ttllm の依存、VOICEVOX(docker)、whisperX-rocm、VRM モデル(vroid/koteko.vrm)
+```
+
+AIassistant 単体で `./start_all.sh` が通る状態になっていれば OK です。
+
+---
+
+## 3. EarthTourGuide の取得
+
+AIassistant と**同じ親ディレクトリ**に clone します（symlink が `../AIassistant` を指すため）。
+
+```bash
+cd ~                       # AIassistant と同じ階層
+git clone https://github.com/kotetsuy/EarthTourGuide.git
+cd EarthTourGuide
+
+# symlink が解決できるか確認（全て [OK] になること）
+for d in ttllm voicevox whisperX-rocm qwen3.6 llama.cpp; do
+  [ -e "$d/" ] && echo "OK  $d -> $(readlink $d)" || echo "BROKEN $d"
+done
+```
+
+---
+
+## 4. Earth 用 venv の作成
+
+Earth を操作する `earth-controller` と中継 `earth-bridge` / `tour` は
+Playwright + aiohttp を使います（Playwright は **system の Google Chrome** を使うので
+chromium のダウンロードは不要）。
+
+```bash
 cd earth-controller
-uv venv && uv pip install playwright aiohttp
-# earth-bridge は同じ venv を流用する（専用 venv を作っても可）
+uv venv
+uv pip install playwright aiohttp
+cd ..
+# earth-bridge と tour は earth-controller/.venv を自動で流用します
+# （専用 venv を作っても可: 各ディレクトリで uv venv && uv pip install aiohttp）
 ```
 
-ベース側（ttllm / voicevox / llama-server / モデル）のセットアップは
-AIassistant の README を参照（symlink で共有）。
+---
 
-## 起動 / 停止
+## 5. 起動
 
 ```bash
-./start_all.sh        # 7サービスを tmux セッション "earthtour" で起動
-./stop_all.sh         # 全停止（VOICEVOX も停止）
-./stop_all.sh --keep-voicevox   # VOICEVOX は残す
-
-tmux attach -t earthtour    # ログを見る
+export DISPLAY=:10.0        # ヘッド付き Chrome 用（環境に合わせて）
+./start_all.sh
 ```
 
-起動後:
-- VRM 画面: <http://localhost:8000/zundamon.html>（Chrome で自動オープン）
-- フレーム確認: <http://localhost:8002/preview>
-- flyTo を手で叩く:
-  ```bash
-  curl -X POST http://localhost:8002/control \
-    -H 'Content-Type: application/json' \
-    -d '{"cmd":"flyto","place":"Eiffel Tower"}'
-  ```
+`start_all.sh` は tmux セッション `earthtour` に以下 7 サービスを順に起動し、
+各ヘルスチェックを待ってから次へ進みます。
 
-## 既知の制約（ベース由来）
+1. VOICEVOX (docker, 50021) → 2. llama-server (8080) → 3. ttllm (8001)
+→ 4. earth-bridge (8002) → 5. earth-controller（headed Chrome で Earth 操作）
+→ 6. three-vrm (8000) → 7. tour (8003)、最後に Chrome で VRM 画面を自動オープン。
 
-- WhisperX は ROCm 7.x で **60秒超の録音で GPU memory fault**。VAD で 55秒カット。
-- VOICEVOX は **CPU 推論**（GPU は LLM/STT で専有）。長文応答は TTS がボトルネック。
-- Chrome の AudioContext は初回クリック（user-gesture）が必須。
-- Qwen3 の thinking は ttllm 経由では常に OFF。
-- パスは `$USER` / `expanduser("~/...")` で統一。ハードコードを増やさない。
-- earth-controller はヘッド付き Chrome を使うため **DISPLAY が必要**
-  （本機では GNOME Remote Desktop の `:10.0`）。
+起動後の確認:
+- VRM 画面: <http://localhost:8000/zundamon.html>（自動オープン）
+- Earth ライブフレーム確認: <http://localhost:8002/preview>
+- ログ: `tmux attach -t earthtour`
 
-## 開発フェーズの進捗
+> 初回は **VRM 画面を一度クリック**してください（Chrome の AudioContext は
+> user-gesture が必須のため、クリックするまで音声が鳴りません）。
 
-- [x] **フェーズ0**: feasibility spike（flyTo 可否・screencast 検証）→ `earth-controller/SPIKE_FINDINGS.md`
-- [x] **フェーズ1**: リポジトリ雛形（構成・symlink・start/stop・README）
-- [ ] **フェーズ2**: 背景ライブ化（earth-bridge → three-vrm `zundamon.html` の背景を WS フレーム化）
-- [ ] **フェーズ3**: ツアー進行 + ナレーション統合（自動巡回＋🎤割り込み質問）
+---
+
+## 6. 使い方
+
+### ツアー（自動巡回）
+
+```bash
+# tour/tours/<id>.json を読んで自動巡回を開始
+curl -X POST http://localhost:8003/tour/start \
+  -H 'Content-Type: application/json' -d '{"id":"world"}'
+
+curl -X POST http://localhost:8003/tour/stop     # 停止
+curl -X POST http://localhost:8003/tour/pause    # 一時停止
+curl -X POST http://localhost:8003/tour/resume   # 再開
+curl -X POST http://localhost:8003/tour/next     # 次の地点へスキップ
+curl     http://localhost:8003/tour/status       # 進行状態
+curl     http://localhost:8003/tour/list         # ツアー一覧
+```
+
+各地点で「その場所へ flyTo → アバターが解説をナレーション」を自動で行います。
+
+### 🎤 で割り込み質問
+
+VRM 画面右下の 🎤 ボタンを押して話しかけると、その内容に音声で答えます。
+**録音を始めるとツアーは自動で一時停止**し、応答が終わると自動で再開します。
+
+### 単発で地点へ飛ばす（デバッグ）
+
+```bash
+curl -X POST http://localhost:8002/control \
+  -H 'Content-Type: application/json' -d '{"cmd":"flyto","place":"Eiffel Tower"}'
+```
+
+### 自分のツアーを追加
+
+`tour/tours/<id>.json` を作成（`world.json` を雛形に）。`id` がそのまま
+`/tour/start` の `id` になります。各 stop の `query`（検索語）と `prompt`（解説指示）を編集。
+
+---
+
+## 7. 停止
+
+```bash
+./stop_all.sh                  # 全停止（VOICEVOX コンテナも停止）
+./stop_all.sh --keep-voicevox  # VOICEVOX は残す
+```
+
+---
+
+## 8. トラブルシュート
+
+| 症状 | 対処 |
+| --- | --- |
+| Earth が映らない / 背景が出ない | `DISPLAY` が正しいか、`http://localhost:8002/health` が `controller_connected:true, have_frame:true` か確認 |
+| 音が鳴らない | VRM 画面を一度クリック（user-gesture）。VOICEVOX(50021) の起動も確認 |
+| symlink が BROKEN | AIassistant が `../AIassistant` に在るか、セットアップ済みか確認 |
+| ツアーが始まらない | `curl http://localhost:8003/tour/status` と `tmux attach -t earthtour` の `tour` ウィンドウのログを確認 |
+| 長い録音で落ちる | WhisperX は ROCm で 60 秒超の録音が不安定（VAD で 55 秒カット） |
+
+詳細な制約・設計は **[TECHNICALJ.md](TECHNICALJ.md)** を参照。
+
+---
 
 ## ライセンス
 

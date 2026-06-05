@@ -37,6 +37,7 @@ PATTERNS=(
     "EarthTourGuide/three-vrm/server.py"
     "EarthTourGuide/earth-bridge/bridge.py"
     "EarthTourGuide/earth-controller/controller.py"
+    "EarthTourGuide/tour/tour_service.py"
 )
 for pat in "${PATTERNS[@]}"; do
     pids=$(pgrep -f "$pat" || true)

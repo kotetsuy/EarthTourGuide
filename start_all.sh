@@ -38,6 +38,7 @@ TTLLM_DIR="${ROOT}/ttllm"
 THREE_VRM_DIR="${ROOT}/three-vrm"
 EARTH_BRIDGE_DIR="${ROOT}/earth-bridge"
 EARTH_CONTROLLER_DIR="${ROOT}/earth-controller"
+TOUR_DIR="${ROOT}/tour"
 
 BROWSER_URL="http://localhost:8000/zundamon.html"
 
@@ -85,6 +86,7 @@ command -v google-chrome >/dev/null || warn "google-chrome が見つかりませ
 [[ -d "$THREE_VRM_DIR"            ]] || die "three-vrm ディレクトリがありません"
 [[ -x "$EARTH_BRIDGE_DIR/run.sh"  ]] || die "earth-bridge/run.sh がありません"
 [[ -x "$EARTH_CONTROLLER_DIR/run.sh" ]] || die "earth-controller/run.sh がありません"
+[[ -x "$TOUR_DIR/run.sh"          ]] || die "tour/run.sh がありません"
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
     log "既存の tmux セッション ${SESSION} を終了します"
@@ -147,7 +149,11 @@ done
 new_window "three-vrm" "cd ${THREE_VRM_DIR} && python3 server.py"
 wait_http "three-vrm" "http://localhost:8000/status" 30
 
-# ---- 7. Chrome ----------------------------------------------------------
+# ---- 7. tour サービス (port 8003) --------------------------------------
+new_window "tour" "cd ${TOUR_DIR} && ./run.sh"
+wait_http "tour" "http://localhost:8003/health" 30
+
+# ---- 8. Chrome ----------------------------------------------------------
 if command -v google-chrome >/dev/null; then
     log "Chrome で ${BROWSER_URL} を開きます"
     google-chrome --new-window "$BROWSER_URL" >/dev/null 2>&1 &
@@ -166,10 +172,15 @@ cat <<EOF
    ttllm           : http://localhost:8001/docs
    earth-bridge    : http://localhost:8002/health
                      フレーム確認: http://localhost:8002/preview
+   tour            : http://localhost:8003/health
    three-vrm       : ${BROWSER_URL}   ← Chrome で自動オープン
-                     右下の 🎤 ボタンで PTT
+                     右下の 🎤 ボタンで PTT（録音中はツアーが自動 pause）
 
- 制御例 (flyTo):
+ ツアー開始 / 停止:
+   curl -X POST http://localhost:8003/tour/start -H 'Content-Type: application/json' -d '{"id":"world"}'
+   curl -X POST http://localhost:8003/tour/stop
+
+ 単発 flyTo (手動):
    curl -X POST http://localhost:8002/control \\
      -H 'Content-Type: application/json' \\
      -d '{"cmd":"flyto","place":"Eiffel Tower"}'

@@ -1,79 +1,167 @@
-# EarthTourGuide
+# EarthTourGuide — Setup & Run Guide
 
-A "world tour guide" demo: **Zundamon** (a VRM avatar) narrates by voice while
-**Google Earth** flies smoothly across the globe behind her. Built for live
-exhibition use, so **stability and visual polish come first**.
+A "world tour guide" demo: a VRM avatar (Koteko / Zundamon) narrates by voice
+while **Google Earth** flies smoothly across the globe behind her. Built for
+live exhibition use, so **stability and visual polish come first**.
 
-日本語の詳しい説明は **[READMEJ.md](READMEJ.md)** を参照。
+- This document is the **git-clone-to-launch** guide.
+- For how it works and design rationale, see **[TECHNICAL.md](TECHNICAL.md)**.
+- 日本語: セットアップ手順は **[READMEJ.md](READMEJ.md)**、技術解説は **[TECHNICALJ.md](TECHNICALJ.md)**。
 
-Based on [kotetsuy/AIassistant](https://github.com/kotetsuy/AIassistant) — a
-fully-local Voice → STT → LLM → TTS → VRM lip-sync template. This repo reuses
-that pipeline, swaps the background for a **live Google Earth feed**, and adds
-tour-progression logic.
+---
 
-## Experience
+## 1. Prerequisites
 
-- The globe fills the screen; Zundamon stands in front of it.
-- She introduces a place and Earth flies there smoothly (`flyTo`).
-- Press 🎤 to ask a question; she answers about that place (reusing the existing
-  voice dialogue pipeline).
+| Item | Requirement |
+| --- | --- |
+| OS | Ubuntu 24.04 |
+| GPU / ROCm | AMD gfx1151 (e.g. Ryzen AI Max+ 395) / ROCm 7.x |
+| Python | 3.12 |
+| Commands | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
+| Display | a `DISPLAY` for headed Chrome (here: GNOME Remote Desktop `:10.0`) |
 
-## Architecture
+> **Important:** this repo reuses the voice pipeline (STT/LLM/TTS/VRM) from
+> [kotetsuy/AIassistant](https://github.com/kotetsuy/AIassistant) via **relative
+> symlinks (`../AIassistant/...`)**. You must place and set up **AIassistant as a
+> sibling directory first**.
 
-```
-earth-controller (Playwright + system Chrome + CDP)
-  └─ drives earth.google.com (smooth flyTo via the in-app search box)
-        ↓ CDP Page.startScreencast (continuous JPEG frames)
-   earth-bridge (port 8002, WebSocket hub)
-        ↓ WS /stream fans frames out
-   three-vrm (port 8000) ← draws them as the background texture
-        └─ Koteko/Zundamon VRM overlaid in front
+---
 
-Voice dialogue (reused):
-   Browser 🎤 → ttllm(8001) → WhisperX (STT) + llama-server(8080, Qwen3.6)
-              → split at sentence boundaries → VOICEVOX(50021) → WS push
-```
-
-> **Verified in Phase 0:** on the real earth.google.com, a smooth `flyTo` is
-> only possible **via the in-app search box** (a raw URL reloads = teleport).
-> CDP screencast runs ~22 fps at 1280×720 JPEG. See
-> `earth-controller/SPIKE_FINDINGS.md`.
-
-## Layout
-
-| Path | Role | Form |
-| --- | --- | --- |
-| `earth-controller/` | Playwright + CDP screencast, Earth control / flyTo | new |
-| `earth-bridge/` | frame → WebSocket relay hub (port 8002) | new |
-| `tour/tours/` | tour definitions (places, coords, narration prompts) | new |
-| `three-vrm/` | aiohttp + VRM viewer (port 8000); gains live-background changes | copied from AIassistant |
-| `ttllm/`, `voicevox/`, `whisperX-rocm/`, `qwen3.6/`, `llama.cpp/` | reused pipeline | symlinks → `../AIassistant/` |
-
-## Quick start
+## 2. Prepare the base (AIassistant)
 
 ```bash
-cd earth-controller && uv venv && uv pip install playwright aiohttp   # uses system Chrome
-cd .. && ./start_all.sh        # starts 7 services in tmux session "earthtour"
-./stop_all.sh                  # stop everything
+cd ~
+git clone https://github.com/kotetsuy/AIassistant.git
+cd AIassistant
+# Follow AIassistant's README to provide:
+#   - a built llama.cpp (~/llama.cpp/build/bin/llama-server)
+#   - the Qwen3.6 GGUF model (qwen3.6/)
+#   - ttllm deps, VOICEVOX (docker), whisperX-rocm, VRM model (vroid/koteko.vrm)
 ```
 
-- VRM view: <http://localhost:8000/zundamon.html>
-- Frame preview: <http://localhost:8002/preview>
-- Trigger a flyTo:
-  ```bash
-  curl -X POST http://localhost:8002/control \
-    -H 'Content-Type: application/json' -d '{"cmd":"flyto","place":"Eiffel Tower"}'
-  ```
+When `./start_all.sh` works inside AIassistant on its own, you're ready.
 
-Note: `earth-controller` launches a **headed** Chrome, so a `DISPLAY` is
-required (on this machine, GNOME Remote Desktop's `:10.0`).
+---
 
-## Phase status
+## 3. Get EarthTourGuide
 
-- [x] **Phase 0** — feasibility spike (flyTo + screencast) → `earth-controller/SPIKE_FINDINGS.md`
-- [x] **Phase 1** — repo skeleton (layout, symlinks, start/stop, README)
-- [ ] **Phase 2** — live background (earth-bridge → three-vrm `zundamon.html`)
-- [ ] **Phase 3** — tour progression + narration (auto tour + 🎤 interrupts)
+Clone it into the **same parent directory** as AIassistant (the symlinks point
+to `../AIassistant`).
+
+```bash
+cd ~                       # same level as AIassistant
+git clone https://github.com/kotetsuy/EarthTourGuide.git
+cd EarthTourGuide
+
+# verify the symlinks resolve (all should print OK)
+for d in ttllm voicevox whisperX-rocm qwen3.6 llama.cpp; do
+  [ -e "$d/" ] && echo "OK  $d -> $(readlink $d)" || echo "BROKEN $d"
+done
+```
+
+---
+
+## 4. Create the Earth venv
+
+`earth-controller`, `earth-bridge` and `tour` use Playwright + aiohttp.
+Playwright drives the **system Google Chrome**, so no chromium download.
+
+```bash
+cd earth-controller
+uv venv
+uv pip install playwright aiohttp
+cd ..
+# earth-bridge and tour reuse earth-controller/.venv automatically
+# (or give each its own: uv venv && uv pip install aiohttp)
+```
+
+---
+
+## 5. Launch
+
+```bash
+export DISPLAY=:10.0        # for headed Chrome (adjust to your env)
+./start_all.sh
+```
+
+`start_all.sh` starts 7 services in the tmux session `earthtour`, waiting on each
+health check before the next:
+
+1. VOICEVOX (docker, 50021) → 2. llama-server (8080) → 3. ttllm (8001)
+→ 4. earth-bridge (8002) → 5. earth-controller (headed Chrome driving Earth)
+→ 6. three-vrm (8000) → 7. tour (8003); then Chrome auto-opens the VRM page.
+
+After launch:
+- VRM page: <http://localhost:8000/zundamon.html> (auto-opened)
+- Live Earth frame preview: <http://localhost:8002/preview>
+- Logs: `tmux attach -t earthtour`
+
+> **Click the VRM page once** on first use — Chrome's AudioContext requires a
+> user gesture, so there is no sound until you click.
+
+---
+
+## 6. Usage
+
+### Auto tour
+
+```bash
+# start the auto tour reading tour/tours/<id>.json
+curl -X POST http://localhost:8003/tour/start \
+  -H 'Content-Type: application/json' -d '{"id":"world"}'
+
+curl -X POST http://localhost:8003/tour/stop     # stop
+curl -X POST http://localhost:8003/tour/pause    # pause
+curl -X POST http://localhost:8003/tour/resume   # resume
+curl -X POST http://localhost:8003/tour/next     # skip to next stop
+curl     http://localhost:8003/tour/status       # progress
+curl     http://localhost:8003/tour/list         # list tours
+```
+
+Per stop it flies to the place and the avatar narrates it automatically.
+
+### Interrupt with 🎤
+
+Press the 🎤 button (bottom-right of the VRM page) and speak; the avatar answers
+by voice. **Starting a recording auto-pauses the tour**, which resumes when the
+answer finishes.
+
+### One-off flyTo (debug)
+
+```bash
+curl -X POST http://localhost:8002/control \
+  -H 'Content-Type: application/json' -d '{"cmd":"flyto","place":"Eiffel Tower"}'
+```
+
+### Add your own tour
+
+Create `tour/tours/<id>.json` (use `world.json` as a template). The `id` is what
+you pass to `/tour/start`. Edit each stop's `query` (search term) and `prompt`.
+
+---
+
+## 7. Stop
+
+```bash
+./stop_all.sh                  # stop everything (incl. VOICEVOX container)
+./stop_all.sh --keep-voicevox  # keep VOICEVOX running
+```
+
+---
+
+## 8. Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| No Earth / no background | `DISPLAY` correct? `http://localhost:8002/health` shows `controller_connected:true, have_frame:true`? |
+| No sound | Click the VRM page once (user gesture); confirm VOICEVOX (50021) is up |
+| Symlink BROKEN | Is AIassistant at `../AIassistant` and set up? |
+| Tour won't start | `curl http://localhost:8003/tour/status` and the `tour` window in `tmux attach -t earthtour` |
+| Crash on long recording | WhisperX is unstable past 60 s on ROCm (VAD caps at 55 s) |
+
+For constraints and design details, see **[TECHNICAL.md](TECHNICAL.md)**.
+
+---
 
 ## License
 

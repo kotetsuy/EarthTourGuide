@@ -178,6 +178,14 @@
             const VOICE_CHAT_URL = "/voice_chat_speak_stream";
             const SPEAKER_ID = 3;
 
+            // tour サービス（別ポート 8003）。🎤 割り込み時にツアー進行を一時停止する。
+            const TOUR_BASE = `http://${location.hostname || "localhost"}:8003`;
+            function tourControl(action) {
+                // ツアー未実行でもサーバ側は no-op。失敗は無視（任意機能）。
+                fetch(`${TOUR_BASE}/tour/${action}`, { method: "POST" })
+                    .catch(() => {});
+            }
+
             const statusEl = document.getElementById("status");
             const subtitleEl = document.getElementById("subtitle");
             const userSubtitleEl = document.getElementById("user-subtitle");
@@ -651,11 +659,18 @@
             let pressedLong = false;
 
             function setMicState(next, hint) {
+                const prev = recState;
                 recState = next;
                 micBtn.classList.toggle("recording", next === "recording");
                 micBtn.classList.toggle("busy", next === "busy");
                 micBtn.disabled = next === "busy";
                 if (hint) micHint.textContent = hint;
+                // 🎤 割り込み: 録音開始でツアーを止め、応答完了(idle 復帰)で再開。
+                if (next === "recording" && prev !== "recording") {
+                    tourControl("pause");
+                } else if (next === "idle" && prev !== "idle") {
+                    tourControl("resume");
+                }
             }
 
             function showUserSubtitle(text) {

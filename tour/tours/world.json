@@ -3,8 +3,11 @@
   "title": "世界一周ずんだもんツアー",
   "description": "ずんだもんが世界の名所を巡りながら解説するデモツアー。",
   "defaults": {
-    "dwell_seconds": 20,
-    "voice": "zundamon"
+    "fly_seconds": 10,
+    "dwell_seconds": 6,
+    "speaker_id": 3,
+    "max_tokens": 220,
+    "system": "あなたは世界一周ツアーのガイドです。今いる場所について、親しみやすく簡潔に2〜3文で、観光客が「行ってみたい」と思うように解説してください。地名の連呼や前置きは避け、すぐ本題に入ってください。"
   },
   "stops": [
     {

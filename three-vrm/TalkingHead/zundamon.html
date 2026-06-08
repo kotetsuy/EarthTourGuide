@@ -513,7 +513,7 @@
                     VRMUtils.removeUnnecessaryJoints(gltf.scene);
                     scene.add(gltf.scene);
 
-                    // Face camera toward front
+                    // VRM0.0 は前を向くよう180°回転（VRM1.0 では no-op）
                     VRMUtils.rotateVRM0(vrm);
 
                     // 画面左下へ寄せる（大きさは AVATAR_DISTANCE 側で調整）
@@ -521,6 +521,14 @@
                         AVATAR_OFFSET_X,
                         AVATAR_OFFSET_Y,
                         0,
+                    );
+
+                    // 正面化: 横にオフセットしてもカメラ（視聴者）の方を向かせる。
+                    // これが無いと中心からズレた分だけ顔が逸れ「こちらを向いていない」ように見える。
+                    // （AVATAR_OFFSET / DISTANCE を変えても常に正面を保つよう動的に算出）
+                    gltf.scene.rotation.y += Math.atan2(
+                        camera.position.x - gltf.scene.position.x,
+                        camera.position.z - gltf.scene.position.z,
                     );
 
                     // 既定ポーズ: 両手を下ろす (T-pose → 自然立ち)

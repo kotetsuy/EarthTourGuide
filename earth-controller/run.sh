@@ -7,8 +7,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# ヘッド付き Chrome 用のディスプレイ。未設定なら GNOME Remote Desktop の :10.0 を既定に。
-export DISPLAY="${DISPLAY:-:10.0}"
+# ヘッド付き Chrome 用のディスプレイ。未設定ならローカルの :0 を既定に。
+export DISPLAY="${DISPLAY:-:0}"
 
 if [[ ! -x .venv/bin/python ]]; then
     echo "[earth-controller] .venv がありません。'uv venv && uv pip install playwright aiohttp' を実行してください" >&2

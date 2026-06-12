@@ -19,7 +19,7 @@ set -euo pipefail
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export PULSE_SERVER="${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native}"
 # ヘッド付き Chrome（earth-controller / 表示用）に必要なディスプレイ
-export DISPLAY="${DISPLAY:-:10.0}"
+export DISPLAY="${DISPLAY:-:0}"
 
 SESSION="earthtour"
 ROOT="/home/$USER/EarthTourGuide"
@@ -92,6 +92,20 @@ command -v google-chrome >/dev/null || warn "google-chrome が見つかりませ
 [[ -x "$EARTH_CONTROLLER_DIR/run.sh" ]] || die "earth-controller/run.sh がありません"
 [[ -x "$TOUR_DIR/run.sh"          ]] || die "tour/run.sh がありません"
 
+# earth-controller は headed Chrome を出すため、DISPLAY が実在しないと起動できない。
+# 未設定時の既定 :10.0 がこのマシンに無く Earth 背景が出ない事故があったので fail-fast にする。
+DISPLAY_NUM="${DISPLAY#:}"; DISPLAY_NUM="${DISPLAY_NUM%%.*}"
+[[ -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ]] || die "DISPLAY=${DISPLAY} が存在しません (earth-controller の headed Chrome に必要)"
+
+# ポート占有チェック。AIassistant など旧サーバが 8000/8001 を掴んだまま残っていると、
+# 本プロジェクトのサーバが bind 失敗で即死し、生き残った旧サーバ（Earth 背景なし・旧アバター
+# レイアウト）が配信され続ける。ヘルスチェックは旧サーバが応答して通ってしまうため、ここで止める。
+for p in 8000 8001 8002 8003; do
+    if ss -tln | grep -q ":${p} "; then
+        die "port ${p} が既に使用中です。旧サーバ（aiassistant セッション等）を停止してください: tmux kill-session -t aiassistant"
+    fi
+done
+
 if tmux has-session -t "$SESSION" 2>/dev/null; then
     log "既存の tmux セッション ${SESSION} を終了します"
     tmux kill-session -t "$SESSION"
@@ -146,7 +160,11 @@ for i in $(seq 1 60); do
         log "  earth-controller connected"; break
     fi
     sleep 2
-    (( i == 60 )) && warn "  controller が bridge に接続しません（手動確認してください）"
+    if (( i == 60 )); then
+        warn "  controller が bridge に接続しませんでした。"
+        warn "  → Earth ライブ背景は出ず、静止画フォールバックになります。"
+        warn "  → earth-controller ウィンドウのログを確認してください: tmux attach -t ${SESSION}"
+    fi
 done
 
 # ---- 6. three-vrm -------------------------------------------------------

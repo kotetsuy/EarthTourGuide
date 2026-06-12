@@ -619,6 +619,17 @@ async def status_handler(request: web.Request) -> web.Response:
     })
 
 
+async def zundamon_html_handler(request: web.Request) -> web.Response:
+    # AIassistant 版など別プロジェクトの zundamon.html がブラウザにキャッシュされ、
+    # Earth 背景なし・旧アバターレイアウトが表示される事故を防ぐため no-store で配信する。
+    filepath = os.path.join(STATIC_DIR, "zundamon.html")
+    if not os.path.isfile(filepath):
+        raise web.HTTPNotFound()
+    resp = web.FileResponse(filepath)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/ws", ws_handler)
@@ -628,6 +639,7 @@ def create_app() -> web.Application:
     app.router.add_get("/vrm/{filename}", vrm_handler)
     app.router.add_get("/images_list", images_list_handler)
     app.router.add_get("/status", status_handler)
+    app.router.add_get("/zundamon.html", zundamon_html_handler)
     if os.path.isdir(IMAGES_DIR):
         app.router.add_static("/images", IMAGES_DIR)
     app.router.add_static("/", STATIC_DIR, show_index=True)

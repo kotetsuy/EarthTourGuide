@@ -158,6 +158,29 @@ If a place comes back, a fire-and-forget task POSTs `earth-bridge /control`
   of queueing behind it — the camera starts flying while the avatar talks.
 - The browser shows a `🛫 <place> へ移動中…` hint on the `flyto` WS event.
 
+### 5.2 Subtitles (audio-synced scroll / bulk clear)
+
+`zundamon.html` has two subtitles: the bot reply `#subtitle` (white) and the
+user utterance `#user-subtitle` (pale blue).
+
+- **Capped at 3 lines:** `#subtitle` uses `max-height` (~3 lines) +
+  `overflow:hidden` so a long narration never covers the screen.
+- **Audio-synced scroll:** `startSubtitleScroll(startAt, duration)` watches the
+  AudioContext clock via `requestAnimationFrame` and moves `scrollTop` from 0 to
+  max across the playback window `[startAt, startAt+duration]` — the 3-line window
+  follows what is being spoken (karaoke-style). Cancelled on `turn_start` /
+  `clear`.
+- **Replace vs append:** streaming voice dialogue resets `botReplyBuf` on
+  `turn_start` and **appends** sentence chunks. `/speak`, however, sends one whole
+  utterance per message, so the speak message carries `replace:true` and the
+  client **replaces** rather than appends to the previous utterance (e.g. a
+  voice-commanded destination). Without this, tour narration would concatenate
+  after the previous text and hide below the 3-line window, looking "stuck".
+- **Bulk clear:** three-vrm gains `POST /clear`, which broadcasts
+  `{"type":"clear"}` to all WS clients; the client hides both subtitles. The tour
+  calls it at the top of `_run` to **drop the leftover voice dialog (🗣 …) at tour
+  start**.
+
 ---
 
 ## 6. Tour progression (tour, port 8003)
@@ -172,6 +195,7 @@ three-vrm / voicevox); all state stays inside the tour service.
 {
   "id": "world",
   "title": "...",
+  "loop": false,            // optional: true to loop forever (start's loop wins)
   "defaults": {
     "fly_seconds": 10,      // wait for the flyTo animation
     "dwell_seconds": 6,     // linger after narration
@@ -189,6 +213,13 @@ three-vrm / voicevox); all state stays inside the tour service.
 
 `query` is the flyTo search term, `prompt` is the narration instruction to ttllm.
 `fly_seconds`/`dwell_seconds` can be overridden per stop.
+
+> **Tone note:** passing `defaults.system` **overrides** ttllm's default persona
+> prompt (`server.py`'s `SYSTEM_PROMPT` = Koteko / first-person "コテコ" / "アルヨ"
+> ending). The bundled `world.json` `system` keeps the Koteko persona *and* the
+> tour-guide role, and the per-stop `prompt`s carry no tone directives (the tone
+> is owned entirely by `system`). Swap `system` in your own tour JSON for a
+> different persona.
 
 ### One stop's sequence
 
@@ -213,14 +244,24 @@ query fails it falls back to a char-count estimate (`len*0.18s`).
 - `_sleep()` **does not advance time while paused** (continues from the remaining
   time on resume).
 - `next()` aborts the current stop and skips forward; `stop()` cancels the task.
+- **Looping:** the loop body is split into `_run_once()` (one lap) and `_run()`
+  drives it with `while True: _run_once(); if _stop or not loop: break`. `loop`
+  comes from `start(tour, loop)` (start's `loop` → tour JSON `loop` → default
+  `false`) and wraps back to index 0 after the last stop. `status()` includes
+  `loop`. `_run` also calls `POST three-vrm /clear` once at the top to drop the
+  previous subtitles (§5.2).
 
 | Endpoint | Action |
 | --- | --- |
-| `POST /tour/start {id}` | start (cancels & recreates any running tour) |
-| `POST /tour/stop` | stop |
+| `POST /tour/start {id, loop?}` | start (cancels & recreates any running tour); `loop:true` loops forever |
+| `POST /tour/stop` | stop (also breaks out of a loop at the next boundary) |
 | `POST /tour/pause` `/resume` | pause / resume |
 | `POST /tour/next` | skip to next stop |
-| `GET /tour/status` `/list` | progress / tour list |
+| `GET /tour/status` `/list` | progress (includes `loop`) / tour list |
+
+Thin wrapper scripts ship at the repo root: `start_tour_loop.sh [id]` (start
+looping) and `stop_tour.sh` (stop) — they just health-check the tour service then
+hit `/tour/start` / `/tour/stop`.
 
 ### Coexisting with the 🎤 interrupt
 
@@ -279,3 +320,6 @@ so a 🎤 question naturally interrupts a running tour.
 - [x] **Phase 1** — repo skeleton (layout, symlinks, start/stop, README)
 - [x] **Phase 2** — live background (earth-bridge → three-vrm)
 - [x] **Phase 3** — tour progression + narration (tour service, 🎤 auto-pause)
+- [x] **Polish** — 3-line subtitles + audio-synced scroll / `/clear` bulk subtitle
+  reset / tour looping (`loop`) + start/stop scripts / unified `world.json` tone to
+  the Koteko "アルヨ" persona

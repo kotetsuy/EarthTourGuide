@@ -106,19 +106,33 @@ After launch:
 ### Auto tour
 
 ```bash
-# start the auto tour reading tour/tours/<id>.json
+# start the auto tour reading tour/tours/<id>.json (one lap)
 curl -X POST http://localhost:8003/tour/start \
   -H 'Content-Type: application/json' -d '{"id":"world"}'
+
+# start looping forever (after the last stop it wraps back to the first)
+curl -X POST http://localhost:8003/tour/start \
+  -H 'Content-Type: application/json' -d '{"id":"world","loop":true}'
 
 curl -X POST http://localhost:8003/tour/stop     # stop
 curl -X POST http://localhost:8003/tour/pause    # pause
 curl -X POST http://localhost:8003/tour/resume   # resume
 curl -X POST http://localhost:8003/tour/next     # skip to next stop
-curl     http://localhost:8003/tour/status       # progress
+curl     http://localhost:8003/tour/status       # progress (also returns loop)
 curl     http://localhost:8003/tour/list         # list tours
 ```
 
+Wrapper scripts are also available:
+
+```bash
+./start_tour_loop.sh          # start the world tour looping forever
+./start_tour_loop.sh kyoto    # loop a different tour id
+./stop_tour.sh                # stop the tour
+```
+
 Per stop it flies to the place and the avatar narrates it automatically.
+To always loop, add `"loop": true` at the top level of `tour/tours/<id>.json`
+instead of passing `"loop":true` on every start.
 
 ### Interrupt with 🎤 / drive Earth by voice
 

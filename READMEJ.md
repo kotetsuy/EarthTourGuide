@@ -105,19 +105,33 @@ export DISPLAY=:10.0        # ヘッド付き Chrome 用（環境に合わせて
 ### ツアー（自動巡回）
 
 ```bash
-# tour/tours/<id>.json を読んで自動巡回を開始
+# tour/tours/<id>.json を読んで自動巡回を開始（1 周）
 curl -X POST http://localhost:8003/tour/start \
   -H 'Content-Type: application/json' -d '{"id":"world"}'
+
+# 無限ループで開始（最後の地点まで行ったら先頭へ戻る）
+curl -X POST http://localhost:8003/tour/start \
+  -H 'Content-Type: application/json' -d '{"id":"world","loop":true}'
 
 curl -X POST http://localhost:8003/tour/stop     # 停止
 curl -X POST http://localhost:8003/tour/pause    # 一時停止
 curl -X POST http://localhost:8003/tour/resume   # 再開
 curl -X POST http://localhost:8003/tour/next     # 次の地点へスキップ
-curl     http://localhost:8003/tour/status       # 進行状態
+curl     http://localhost:8003/tour/status       # 進行状態（loop の有無も返る）
 curl     http://localhost:8003/tour/list         # ツアー一覧
 ```
 
+ラッパースクリプトでも開始／停止できます:
+
+```bash
+./start_tour_loop.sh          # world ツアーを無限ループで開始
+./start_tour_loop.sh kyoto    # 別の id を指定して無限ループ開始
+./stop_tour.sh                # ツアー停止
+```
+
 各地点で「その場所へ flyTo → アバターが解説をナレーション」を自動で行います。
+常時ループにしたい場合は、毎回 `"loop":true` を付ける代わりに
+`tour/tours/<id>.json` のトップレベルに `"loop": true` を足しておけば既定でループします。
 
 ### 🎤 で割り込み質問・音声で行き先を指示
 

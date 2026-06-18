@@ -186,6 +186,9 @@ async def _synthesize_and_broadcast(text: str, speaker_id: int) -> dict:
         "vtimes": vtimes,
         "vdurations": vdurations,
         "text": text,
+        # /speak は 1 発話まるごとを 1 メッセージで送る。クライアントは
+        # 直前の発話に追記せず置き換える（streaming は turn_start でリセット）。
+        "replace": True,
     })
 
     dead = []
@@ -619,6 +622,13 @@ async def status_handler(request: web.Request) -> web.Response:
     })
 
 
+async def clear_handler(request: web.Request) -> web.Response:
+    """字幕（ボット返答 + ユーザー発話ダイアログ）を全クライアントで消す。
+    ツアー開始時に直前の音声入力ダイアログを残さないために呼ぶ。"""
+    n = await _broadcast({"type": "clear"})
+    return web.json_response({"ok": True, "clients": n})
+
+
 async def zundamon_html_handler(request: web.Request) -> web.Response:
     # AIassistant 版など別プロジェクトの zundamon.html がブラウザにキャッシュされ、
     # Earth 背景なし・旧アバターレイアウトが表示される事故を防ぐため no-store で配信する。
@@ -636,6 +646,7 @@ def create_app() -> web.Application:
     app.router.add_post("/speak", speak_handler)
     app.router.add_post("/voice_chat_speak", voice_chat_speak_handler)
     app.router.add_post("/voice_chat_speak_stream", voice_chat_speak_stream_handler)
+    app.router.add_post("/clear", clear_handler)
     app.router.add_get("/vrm/{filename}", vrm_handler)
     app.router.add_get("/images_list", images_list_handler)
     app.router.add_get("/status", status_handler)

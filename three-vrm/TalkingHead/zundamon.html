@@ -49,6 +49,11 @@
                 border-radius: 8px;
                 display: none;
                 max-width: 80%;
+                /* 字幕は最大3行までに制限し、画面を覆わないようにする。
+                   表示/非表示は JS が display:block/none で切り替えるため
+                   -webkit-line-clamp は使えず、max-height + overflow で抑える。 */
+                max-height: 4.3em; /* line-height 1.4 × 3行 ≒ 4.2em */
+                overflow: hidden;
                 text-align: center;
                 pointer-events: none;
             }
@@ -409,6 +414,38 @@
                 if (audioCtx) playheadTime = audioCtx.currentTime;
             }
 
+            // 字幕を音声の再生区間 [startAt, startAt+duration] に同期して
+            // 上→下へスクロールさせる。max-height で 3 行に絞った窓を、
+            // いま喋っている箇所が見えるように追従させる（カラオケ風）。
+            let subtitleScrollRAF = null;
+            function cancelSubtitleScroll() {
+                if (subtitleScrollRAF) {
+                    cancelAnimationFrame(subtitleScrollRAF);
+                    subtitleScrollRAF = null;
+                }
+            }
+            function startSubtitleScroll(startAt, duration) {
+                cancelSubtitleScroll();
+                if (!audioCtx || !(duration > 0)) return;
+                const step = () => {
+                    const maxScroll =
+                        subtitleEl.scrollHeight - subtitleEl.clientHeight;
+                    if (maxScroll <= 0 || subtitleEl.style.display === "none") {
+                        subtitleEl.scrollTop = 0;
+                        subtitleScrollRAF = null;
+                        return;
+                    }
+                    const p = Math.min(
+                        1,
+                        Math.max(0, (audioCtx.currentTime - startAt) / duration),
+                    );
+                    subtitleEl.scrollTop = p * maxScroll;
+                    subtitleScrollRAF =
+                        p < 1 ? requestAnimationFrame(step) : null;
+                };
+                subtitleScrollRAF = requestAnimationFrame(step);
+            }
+
             // --- 自然な待機モーション (呼吸 + 体揺れ + 頭の微動) ---
             // 振幅はラジアン。0.02 rad ≒ 1.15°。
             const IDLE = {
@@ -573,6 +610,7 @@
                         ensureAudioCtx();
                         currentTurnId = msg.turn_id || null;
                         stopAllPlayback();
+                        cancelSubtitleScroll();
                         botReplyBuf = "";
                         subtitleEl.textContent = "";
                         subtitleEl.style.display = "none";
@@ -611,6 +649,21 @@
                         if (micHint)
                             micHint.textContent =
                                 "🛫 " + (msg.place || "") + " へ移動中…";
+                        return;
+                    }
+                    if (msg.type === "clear") {
+                        // ツアー開始時などに字幕をまとめて消す
+                        // （前回の音声入力ダイアログを残さない）。
+                        cancelSubtitleScroll();
+                        botReplyBuf = "";
+                        subtitleEl.textContent = "";
+                        subtitleEl.style.display = "none";
+                        userSubtitleEl.textContent = "";
+                        userSubtitleEl.style.display = "none";
+                        if (subtitleHideTimer) {
+                            clearTimeout(subtitleHideTimer);
+                            subtitleHideTimer = null;
+                        }
                         return;
                     }
                     if (msg.type !== "speak" && msg.type !== undefined) return;
@@ -662,9 +715,16 @@
                     playheadTime = startAt + audioBuf.duration;
 
                     if (msg.text) {
-                        botReplyBuf += msg.text;
+                        // replace=true は /speak 由来の「1 発話まるごと」のメッセージ。
+                        // 直前の発話（音声入力の行き先など）を残さず置き換える。
+                        // streaming は turn_start でリセット済みなので従来どおり追記。
+                        botReplyBuf = msg.replace
+                            ? msg.text
+                            : botReplyBuf + msg.text;
                         subtitleEl.textContent = botReplyBuf;
                         subtitleEl.style.display = "block";
+                        // 音声に合わせて 3 行窓をスクロールさせ、喋っている箇所を追従。
+                        startSubtitleScroll(startAt, audioBuf.duration);
                     }
 
                     console.log(

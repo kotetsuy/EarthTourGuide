@@ -77,6 +77,7 @@ class TourRunner:
         self.stop_name: str | None = None
         self.phase = "idle"                 # idle|flying|narrating|dwelling|done
         self._skip = False
+        self.loop = False                   # True なら最後の地点の後に先頭へ戻る
 
     @property
     def running(self) -> bool:
@@ -95,13 +96,15 @@ class TourRunner:
             "index": self.index,
             "stop": self.stop_name,
             "phase": self.phase,
+            "loop": self.loop,
         }
 
-    async def start(self, tour: dict):
+    async def start(self, tour: dict, loop: bool = False):
         await self.stop()
         self._stop = False
         self._skip = False
         self._resume.set()
+        self.loop = loop
         self.tour_id = tour.get("id")
         self.tour_title = tour.get("title")
         self.index = -1
@@ -153,48 +156,55 @@ class TourRunner:
         cfg = {**DEFAULTS, **(tour.get("defaults") or {})}
         stops = tour.get("stops") or []
         async with aiohttp.ClientSession() as s:
-            for i, stop in enumerate(stops):
-                if self._stop:
+            # 開始時に字幕をクリア（前回の音声入力ダイアログ等を残さない）。
+            await self._post(s, f"{THREE_VRM_URL}/clear", {})
+            while True:
+                await self._run_once(s, stops, cfg)
+                if self._stop or not self.loop:
                     break
-                self._skip = False
-                self.index = i
-                self.stop_name = stop.get("name") or stop.get("query")
-                await self._gate()
-
-                # 1) flyTo
-                self.phase = "flying"
-                place = stop.get("query") or stop.get("name")
-                await self._post(s, f"{EARTH_BRIDGE_URL}/control",
-                                 {"cmd": "flyto", "place": place})
-                await self._sleep(stop.get("fly_seconds", cfg["fly_seconds"]))
-                if self._stop:
-                    break
-                # 2) 到着後パネルを閉じて背景を綺麗に
-                await self._post(s, f"{EARTH_BRIDGE_URL}/control",
-                                 {"cmd": "dismiss"})
-
-                if self._skip:
-                    continue
-                await self._gate()
-
-                # 3) 解説文生成
-                self.phase = "narrating"
-                reply = await self._narrate(s, stop, cfg)
-
-                # 4) 発話 + 5) 滞在
-                if reply:
-                    secs = await self._estimate_speech(
-                        s, reply, cfg["speaker_id"])
-                    await self._post(s, f"{THREE_VRM_URL}/speak",
-                                     {"text": reply,
-                                      "speaker_id": cfg["speaker_id"]})
-                    await self._sleep((secs or 0) + cfg["speech_buffer"])
-
-                self.phase = "dwelling"
-                await self._sleep(stop.get("dwell_seconds", cfg["dwell_seconds"]))
-
         self.phase = "done"
         self.stop_name = None
+
+    async def _run_once(self, s, stops, cfg):
+        for i, stop in enumerate(stops):
+            if self._stop:
+                break
+            self._skip = False
+            self.index = i
+            self.stop_name = stop.get("name") or stop.get("query")
+            await self._gate()
+
+            # 1) flyTo
+            self.phase = "flying"
+            place = stop.get("query") or stop.get("name")
+            await self._post(s, f"{EARTH_BRIDGE_URL}/control",
+                             {"cmd": "flyto", "place": place})
+            await self._sleep(stop.get("fly_seconds", cfg["fly_seconds"]))
+            if self._stop:
+                break
+            # 2) 到着後パネルを閉じて背景を綺麗に
+            await self._post(s, f"{EARTH_BRIDGE_URL}/control",
+                             {"cmd": "dismiss"})
+
+            if self._skip:
+                continue
+            await self._gate()
+
+            # 3) 解説文生成
+            self.phase = "narrating"
+            reply = await self._narrate(s, stop, cfg)
+
+            # 4) 発話 + 5) 滞在
+            if reply:
+                secs = await self._estimate_speech(
+                    s, reply, cfg["speaker_id"])
+                await self._post(s, f"{THREE_VRM_URL}/speak",
+                                 {"text": reply,
+                                  "speaker_id": cfg["speaker_id"]})
+                await self._sleep((secs or 0) + cfg["speech_buffer"])
+
+            self.phase = "dwelling"
+            await self._sleep(stop.get("dwell_seconds", cfg["dwell_seconds"]))
 
     async def _narrate(self, s, stop, cfg) -> str | None:
         prompt = stop.get("prompt") or (
@@ -281,7 +291,11 @@ async def tour_start(req):
         return web.json_response(
             {"error": f"unknown tour '{tid}'",
              "available": list(tours)}, status=404)
-    await runner.start(tours[tid])
+    # loop は body 優先、無ければツアー JSON の "loop"、それも無ければ False。
+    loop = body.get("loop")
+    if loop is None:
+        loop = bool(tours[tid].get("loop", False))
+    await runner.start(tours[tid], loop=bool(loop))
     return web.json_response({"status": "started", **runner.status()})
 
 

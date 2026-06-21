@@ -48,7 +48,13 @@
                 padding: 8px 22px;
                 border-radius: 8px;
                 display: none;
-                max-width: 80%;
+                /* 広い画面（高解像度）でも字幕窓の実幅を一定に抑え、テキストが
+                   折り返して 3 行窓を溢れるようにする。これがないと 2560px 級の
+                   画面では 80% が広すぎて溢れず、追従スクロールが発動しない。
+                   880px だと 2〜3 文の返答でも溢れ量が半行程度しかなく体感で
+                   スクロールしないため、640px まで詰めて長文が明確に流れるようにする
+                   （実測: viewport2560 で 150 字の返答が maxScroll 70px=約2.5行）。 */
+                max-width: min(80%, 640px);
                 /* 字幕は最大3行までに制限し、画面を覆わないようにする。
                    表示/非表示は JS が display:block/none で切り替えるため
                    -webkit-line-clamp は使えず、max-height + overflow で抑える。 */
@@ -414,34 +420,63 @@
                 if (audioCtx) playheadTime = audioCtx.currentTime;
             }
 
-            // 字幕を音声の再生区間 [startAt, startAt+duration] に同期して
-            // 上→下へスクロールさせる。max-height で 3 行に絞った窓を、
+            // 字幕を「発話全体」の再生区間 [subtitleStartAt, subtitleEndAt] に
+            // 同期して上→下へスクロールさせる。max-height で 3 行に絞った窓を、
             // いま喋っている箇所が見えるように追従させる（カラオケ風）。
+            //
+            // 重要: 音声入力(voice_chat)は 1 発話が文ごとの複数チャンクに分割されて
+            // 届く。チャンクごとに scroll を作り直すと、各チャンクが前を打ち切り、
+            // 最後のチャンク（＝発話のほぼ末尾）の開始時刻でしか動かず「喋り終わりに
+            // 一気にスクロール」してしまう。そこで区間は発話全体で持ち、先頭チャンクで
+            // 始点を、後続チャンクで終点だけ延ばし、rAF ループは止めずに走らせ続ける。
             let subtitleScrollRAF = null;
+            let subtitleStartAt = 0; // 発話先頭の音声開始時刻 (audioCtx 時間)
+            let subtitleEndAt = 0; // 最新チャンクまでの音声終了時刻
             function cancelSubtitleScroll() {
                 if (subtitleScrollRAF) {
                     cancelAnimationFrame(subtitleScrollRAF);
                     subtitleScrollRAF = null;
                 }
+                subtitleStartAt = 0;
+                subtitleEndAt = 0;
             }
-            function startSubtitleScroll(startAt, duration) {
-                cancelSubtitleScroll();
+            // チャンク到着のたびに呼ぶ。fresh=true なら新しい発話として始点を更新、
+            // false なら同じ発話の続きとして終点だけ延長する。
+            function extendSubtitleScroll(startAt, duration, fresh) {
                 if (!audioCtx || !(duration > 0)) return;
+                if (fresh) subtitleStartAt = startAt;
+                subtitleEndAt = Math.max(subtitleEndAt, startAt + duration);
+                if (subtitleScrollRAF) return; // 既にループ中。終点だけ更新すれば良い
                 const step = () => {
                     const maxScroll =
                         subtitleEl.scrollHeight - subtitleEl.clientHeight;
-                    if (maxScroll <= 0 || subtitleEl.style.display === "none") {
+                    const span = subtitleEndAt - subtitleStartAt;
+                    if (
+                        maxScroll <= 0 ||
+                        !(span > 0) ||
+                        subtitleEl.style.display === "none"
+                    ) {
+                        // まだ溢れていない/区間未確定。発話終了までは諦めず待つ
+                        // （後続チャンクで溢れるようになることがある）。
                         subtitleEl.scrollTop = 0;
-                        subtitleScrollRAF = null;
+                        subtitleScrollRAF =
+                            audioCtx.currentTime < subtitleEndAt
+                                ? requestAnimationFrame(step)
+                                : null;
                         return;
                     }
                     const p = Math.min(
                         1,
-                        Math.max(0, (audioCtx.currentTime - startAt) / duration),
+                        Math.max(
+                            0,
+                            (audioCtx.currentTime - subtitleStartAt) / span,
+                        ),
                     );
                     subtitleEl.scrollTop = p * maxScroll;
                     subtitleScrollRAF =
-                        p < 1 ? requestAnimationFrame(step) : null;
+                        audioCtx.currentTime < subtitleEndAt
+                            ? requestAnimationFrame(step)
+                            : null;
                 };
                 subtitleScrollRAF = requestAnimationFrame(step);
             }
@@ -718,13 +753,16 @@
                         // replace=true は /speak 由来の「1 発話まるごと」のメッセージ。
                         // 直前の発話（音声入力の行き先など）を残さず置き換える。
                         // streaming は turn_start でリセット済みなので従来どおり追記。
+                        // fresh = この msg が発話の先頭か（置換、または初チャンク）。
+                        const fresh = msg.replace || botReplyBuf === "";
                         botReplyBuf = msg.replace
                             ? msg.text
                             : botReplyBuf + msg.text;
                         subtitleEl.textContent = botReplyBuf;
                         subtitleEl.style.display = "block";
-                        // 音声に合わせて 3 行窓をスクロールさせ、喋っている箇所を追従。
-                        startSubtitleScroll(startAt, audioBuf.duration);
+                        // 発話全体の区間に合わせて 3 行窓をスクロール。後続チャンクは
+                        // 終点を延ばすだけで、ループは止めない（末尾一気スクロール防止）。
+                        extendSubtitleScroll(startAt, audioBuf.duration, fresh);
                     }
 
                     console.log(

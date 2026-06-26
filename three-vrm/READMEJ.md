@@ -66,7 +66,7 @@ python3 server.py
 ```bash
 curl -X POST http://localhost:8000/speak \
   -H 'Content-Type: application/json' \
-  -d '{"text":"こんにちはアルヨ","speaker_id":3}'
+  -d '{"text":"こんにちは！","speaker_id":3}'
 ```
 
 - `text` : 読み上げテキスト

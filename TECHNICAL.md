@@ -215,8 +215,8 @@ three-vrm / voicevox); all state stays inside the tour service.
 `fly_seconds`/`dwell_seconds` can be overridden per stop.
 
 > **Tone note:** passing `defaults.system` **overrides** ttllm's default persona
-> prompt (`server.py`'s `SYSTEM_PROMPT` = Koteko / first-person "コテコ" / "アルヨ"
-> ending). The bundled `world.json` `system` keeps the Koteko persona *and* the
+> prompt (`server.py`'s `SYSTEM_PROMPT` = Koteko / first-person "コテコ" / cheerful
+> energetic-girl tone). The bundled `world.json` `system` keeps the Koteko persona *and* the
 > tour-guide role, and the per-stop `prompt`s carry no tone directives (the tone
 > is owned entirely by `system`). Swap `system` in your own tour JSON for a
 > different persona.
@@ -322,4 +322,4 @@ so a 🎤 question naturally interrupts a running tour.
 - [x] **Phase 3** — tour progression + narration (tour service, 🎤 auto-pause)
 - [x] **Polish** — 3-line subtitles + audio-synced scroll / `/clear` bulk subtitle
   reset / tour looping (`loop`) + start/stop scripts / unified `world.json` tone to
-  the Koteko "アルヨ" persona
+  the Koteko cheerful energetic-girl persona

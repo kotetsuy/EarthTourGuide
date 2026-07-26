@@ -54,8 +54,9 @@ three-vrm: moras → visemes 変換
 ## 起動
 
 ```bash
-cd ~/AIassistant/three-vrm
-python3 server.py
+cd ~/EarthTourGuide/three-vrm
+# aiohttp が入った python で起動する（Ubuntu 26.04 の system python3 (3.14) には無い）
+~/whisperx/whisperX-rocm/.venv/bin/python server.py
 ```
 
 ブラウザで `http://localhost:8000/zundamon.html` を開く。

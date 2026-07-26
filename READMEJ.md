@@ -13,11 +13,20 @@ Google Earth 上を巡りながら、VRM アバター（Koteko／ずんだもん
 
 | 項目 | 要件 |
 | --- | --- |
-| OS | Ubuntu 24.04 |
-| GPU / ROCm | AMD gfx1151（Ryzen AI Max+ 395 等）/ ROCm 7.x |
-| Python | 3.12 |
+| OS | Ubuntu 26.04 (resolute) |
+| GPU / ROCm | AMD gfx1151（Ryzen AI Max+ 395 等）/ ROCm 7.14.0 (`/opt/rocm`) |
+| Python | system 3.14 / 各 venv は 3.12（`.python-version` で固定） |
 | 必須コマンド | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
-| ディスプレイ | ヘッド付き Chrome を出す `DISPLAY`（本機では GNOME Remote Desktop の `:10.0`） |
+| ディスプレイ | ヘッド付き Chrome を出す `DISPLAY`（本機はローカルの `:0`） |
+
+> ROCm 7.14 は Ubuntu 26.04 なら apt でネイティブ導入できます
+> （`repo.amd.com/rocm/packages-multi-arch/ubuntu2604` の `amdrocm-core-sdk7.14-gfx1151`）。
+> カーネル同梱 amdgpu が gfx1151 対応済みなので DKMS / `amdgpu-install` は不要です。
+
+> **`HSA_OVERRIDE_GFX_VERSION` は設定しないこと。** gfx1151 版 PyTorch ホイール・
+> CTranslate2-ROCm・llama.cpp はすべて gfx1151 ネイティブビルドなので、arch を override
+> すると壊れます。`start_all.sh` はシェル profile から export されている場合に備えて
+> 明示的に `unset` します。
 
 > **重要:** 本リポジトリは音声パイプライン（STT/LLM/TTS/VRM）を
 > [kotetsuy/AIassistant](https://github.com/kotetsuy/AIassistant) から
@@ -39,6 +48,16 @@ cd AIassistant
 ```
 
 AIassistant 単体で `./start_all.sh` が通る状態になっていれば OK です。
+
+> **ROCm 7.14 環境での要点**（詳細は AIassistant の READMEJ）:
+> - PyTorch は **gfx1151 専用インデックス** (`repo.amd.com/rocm/whl/gfx1151/`) の
+>   `torch==2.8.0+rocm7.12.0` / `torchaudio==2.8.0a0+rocm7.12.0` を使う。汎用 `whl-multi-arch`
+>   版は実行時に `hipErrorInvalidImage` で全 GPU 操作が落ちる。**torchaudio は 2.9 未満**
+>   （pyannote が `torchaudio.info` / `AudioMetaData` を使う）。
+> - WhisperX venv は `~/whisperx/whisperX-rocm/.venv`（`ttllm/run.sh` の既定。`WHISPERX_VENV`
+>   で上書き可）。旧 `~/AIzunda/whisperX-rocm` は OS 更新（system python 3.14）で壊れたため使わない。
+> - `ttllm/server.py` は先頭で `import torch` する（ctranslate2 より先に読まないと
+>   `undefined symbol: _ZN9rocRoller...` で落ちる）。
 
 ---
 
@@ -74,12 +93,21 @@ cd ..
 # （専用 venv を作っても可: 各ディレクトリで uv venv && uv pip install aiohttp）
 ```
 
+`three-vrm` も aiohttp が必要ですが、Ubuntu 26.04 の system python3 (3.14) には入っていません。
+`start_all.sh` は `~/whisperx/whisperX-rocm/.venv` → `earth-controller/.venv` → `python3` の順に
+**aiohttp を持つ python** を探して three-vrm を起動します。どこにも無ければ起動前に停止するので、
+その場合は venv に入れてください:
+
+```bash
+VIRTUAL_ENV=~/whisperx/whisperX-rocm/.venv uv pip install aiohttp
+```
+
 ---
 
 ## 5. 起動
 
 ```bash
-export DISPLAY=:10.0        # ヘッド付き Chrome 用（環境に合わせて）
+export DISPLAY=:0           # ヘッド付き Chrome 用（環境に合わせて）
 ./start_all.sh
 ```
 
@@ -176,6 +204,11 @@ curl -X POST http://localhost:8002/control \
 | symlink が BROKEN | AIassistant が `../AIassistant` に在るか、セットアップ済みか確認 |
 | ツアーが始まらない | `curl http://localhost:8003/tour/status` と `tmux attach -t earthtour` の `tour` ウィンドウのログを確認 |
 | 長い録音で落ちる | WhisperX は ROCm で 60 秒超の録音が不安定（VAD で 55 秒カット） |
+| three-vrm が `ModuleNotFoundError: aiohttp` | system python3 (3.14) で起動している。aiohttp 入りの venv python を使う |
+| STT で `undefined symbol: _ZN9rocRoller...` | torch が ctranslate2 より後に import されている。`ttllm/server.py` 冒頭の `import torch` を確認 |
+| torch で `hipErrorInvalidImage` / `kpack_load_code_object failed` | 汎用 multi-arch の torch が入っている。gfx1151 専用インデックス版に入れ替える |
+| `module 'torchaudio' has no attribute 'AudioMetaData'` | torchaudio が 2.9 以上。2.8.x (`2.8.0a0+rocm7.12.0`) に下げる |
+| GPU が使われない / HIP エラー | `HSA_OVERRIDE_GFX_VERSION` が export されていないか確認（gfx1151 では設定してはいけない） |
 
 詳細な制約・設計は **[TECHNICALJ.md](TECHNICALJ.md)** を参照。
 

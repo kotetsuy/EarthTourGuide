@@ -73,6 +73,9 @@ EarthTourGuide/
   差し替える改造が入るため、symlink ではなくコピーして差分管理する。
 - `three-vrm/server.py` は VRM モデルを `~/AIassistant/vroid`、背景画像を `~/AIzunda/images`
   から読む（コピー後もそのまま動作）。
+- `whisperX-rocm` は 2 段 symlink（`../AIassistant/whisperX-rocm` → `~/whisperx/whisperX-rocm`）。
+  その `.venv`（python 3.12）が `ttllm/run.sh` の既定であり、`start_all.sh` は three-vrm にも
+  同じ python を優先して使う。
 
 ---
 
@@ -291,7 +294,23 @@ aiohttp の WebSocket ハブ。最新フレームのみ保持し、新規視聴�
 
 ### ベース由来の制約
 
-- WhisperX は ROCm 7.x で **60 秒超の録音が不安定**（VAD で 55 秒カット）。
+- **PyTorch (ROCm) は gfx1151 専用ホイールが必須**。`repo.amd.com/rocm/whl/gfx1151/` の
+  `torch==2.8.0+rocm7.12.0` / `torchaudio==2.8.0a0+rocm7.12.0` を使う。汎用 `whl-multi-arch`
+  版は実行時に `hipErrorInvalidImage`（`kpack_load_code_object failed with error: 13`）で
+  **全 GPU 操作が落ちる**。torch は CTranslate2 が使うシステム ROCm 7.14 とは別に自前の
+  `rocm-sdk-libraries-gfx1151`（7.12）を同梱するが、`LD_LIBRARY_PATH` に `/opt/rocm/lib` が
+  入っていれば同一プロセスで共存できる。
+- **torch は ctranslate2/whisperx より先に import** する必要がある（`ttllm/server.py` の
+  先頭で実施）。逆順だと torch 同梱の `libhipblaslt.so.1` が rocRoller シンボルを解決できず
+  `OSError: undefined symbol: _ZN9rocRoller...` で落ちる。
+- **torchaudio は 2.9 未満に固定**。pyannote-audio が使う `torchaudio.info` /
+  `AudioMetaData` が 2.9 で削除されたため。
+- **`HSA_OVERRIDE_GFX_VERSION` は設定しない**（すべて gfx1151 ネイティブビルド）。
+  `start_all.sh` で `unset` している。
+- **three-vrm は venv python で起動**する。Ubuntu 26.04 の system python（3.14）には
+  `aiohttp` が無い。`start_all.sh` は `~/whisperx/whisperX-rocm/.venv` →
+  `earth-controller/.venv` → `python3` の順に import できる python を選び、無ければ起動前に停止する。
+- WhisperX は ROCm で **60 秒超の録音が不安定**（VAD で 55 秒カット）。
 - VOICEVOX は **CPU 推論**（GPU は LLM/STT で専有）。長文応答は TTS がボトルネック。
 - Chrome の AudioContext は初回クリック（user-gesture）必須。
 - Qwen3 の thinking は ttllm 経由では常に OFF。

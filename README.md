@@ -14,11 +14,21 @@ live exhibition use, so **stability and visual polish come first**.
 
 | Item | Requirement |
 | --- | --- |
-| OS | Ubuntu 24.04 |
-| GPU / ROCm | AMD gfx1151 (e.g. Ryzen AI Max+ 395) / ROCm 7.x |
-| Python | 3.12 |
+| OS | Ubuntu 26.04 (resolute) |
+| GPU / ROCm | AMD gfx1151 (e.g. Ryzen AI Max+ 395) / ROCm 7.14.0 (`/opt/rocm`) |
+| Python | system 3.14 / each venv is 3.12 (pinned via `.python-version`) |
 | Commands | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
-| Display | a `DISPLAY` for headed Chrome (here: GNOME Remote Desktop `:10.0`) |
+| Display | a `DISPLAY` for headed Chrome (here: the local `:0`) |
+
+> On Ubuntu 26.04, ROCm 7.14 installs natively via apt
+> (`amdrocm-core-sdk7.14-gfx1151` from `repo.amd.com/rocm/packages-multi-arch/ubuntu2604`).
+> The in-tree amdgpu kernel driver already supports gfx1151, so DKMS / `amdgpu-install`
+> are not needed.
+
+> **Do not set `HSA_OVERRIDE_GFX_VERSION`.** The gfx1151 PyTorch wheels,
+> CTranslate2-ROCm and llama.cpp are all built natively for gfx1151, so overriding the
+> arch breaks them. `start_all.sh` explicitly `unset`s it in case your shell profile
+> exports it.
 
 > **Important:** this repo reuses the voice pipeline (STT/LLM/TTS/VRM) from
 > [kotetsuy/AIassistant](https://github.com/kotetsuy/AIassistant) via **relative
@@ -40,6 +50,17 @@ cd AIassistant
 ```
 
 When `./start_all.sh` works inside AIassistant on its own, you're ready.
+
+> **ROCm 7.14 notes** (see AIassistant's README for the full steps):
+> - Install PyTorch from the **gfx1151-specific index** (`repo.amd.com/rocm/whl/gfx1151/`):
+>   `torch==2.8.0+rocm7.12.0` / `torchaudio==2.8.0a0+rocm7.12.0`. The generic
+>   `whl-multi-arch` build fails at runtime with `hipErrorInvalidImage` on every GPU op.
+>   Pin **torchaudio to < 2.9** (pyannote uses `torchaudio.info` / `AudioMetaData`).
+> - The WhisperX venv lives at `~/whisperx/whisperX-rocm/.venv` (the default in
+>   `ttllm/run.sh`; override with `WHISPERX_VENV`). The old `~/AIzunda/whisperX-rocm`
+>   broke when the OS moved to system python 3.14.
+> - `ttllm/server.py` imports `torch` at the very top — it must load before ctranslate2,
+>   otherwise STT dies with `undefined symbol: _ZN9rocRoller...`.
 
 ---
 
@@ -75,12 +96,21 @@ cd ..
 # (or give each its own: uv venv && uv pip install aiohttp)
 ```
 
+`three-vrm` needs aiohttp too, and Ubuntu 26.04's system python3 (3.14) doesn't have it.
+`start_all.sh` picks the first python that can `import aiohttp`, trying
+`~/whisperx/whisperX-rocm/.venv` → `earth-controller/.venv` → `python3`, and aborts before
+launching if none works. In that case install it:
+
+```bash
+VIRTUAL_ENV=~/whisperx/whisperX-rocm/.venv uv pip install aiohttp
+```
+
 ---
 
 ## 5. Launch
 
 ```bash
-export DISPLAY=:10.0        # for headed Chrome (adjust to your env)
+export DISPLAY=:0           # for headed Chrome (adjust to your env)
 ./start_all.sh
 ```
 
@@ -178,6 +208,11 @@ you pass to `/tour/start`. Edit each stop's `query` (search term) and `prompt`.
 | Symlink BROKEN | Is AIassistant at `../AIassistant` and set up? |
 | Tour won't start | `curl http://localhost:8003/tour/status` and the `tour` window in `tmux attach -t earthtour` |
 | Crash on long recording | WhisperX is unstable past 60 s on ROCm (VAD caps at 55 s) |
+| three-vrm dies with `ModuleNotFoundError: aiohttp` | It started under system python3 (3.14). Use a venv python that has aiohttp |
+| STT fails with `undefined symbol: _ZN9rocRoller...` | torch was imported after ctranslate2. Check the `import torch` at the top of `ttllm/server.py` |
+| torch fails with `hipErrorInvalidImage` / `kpack_load_code_object failed` | The generic multi-arch torch is installed. Replace it with the gfx1151-specific wheels |
+| `module 'torchaudio' has no attribute 'AudioMetaData'` | torchaudio is 2.9+. Downgrade to 2.8.x (`2.8.0a0+rocm7.12.0`) |
+| GPU unused / HIP errors | Make sure `HSA_OVERRIDE_GFX_VERSION` is not exported (it must not be set on gfx1151) |
 
 For constraints and design details, see **[TECHNICAL.md](TECHNICAL.md)**.
 

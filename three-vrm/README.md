@@ -56,8 +56,9 @@ Browser: AudioContext playback + three-vrm lip-sync
 ## Run
 
 ```bash
-cd ~/AIzunda/three-vrm
-python3 server.py
+cd ~/EarthTourGuide/three-vrm
+# use a python that has aiohttp — Ubuntu 26.04's system python3 (3.14) does not.
+~/whisperx/whisperX-rocm/.venv/bin/python server.py
 ```
 
 Open `http://localhost:8000/zundamon.html` in a browser. On first load,

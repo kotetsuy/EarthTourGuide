@@ -44,10 +44,17 @@ EARTH_BRIDGE_DIR="${ROOT}/earth-bridge"
 EARTH_CONTROLLER_DIR="${ROOT}/earth-controller"
 TOUR_DIR="${ROOT}/tour"
 
+# WhisperX-ROCm の venv (ttllm と共有)。Ubuntu 26.04 更新時に旧 ~/AIzunda 側の venv が
+# 壊れたため ~/whisperx に統一（ttllm/run.sh の既定と揃える）。
+WHISPERX_VENV="${WHISPERX_VENV:-/home/$USER/whisperx/whisperX-rocm/.venv}"
+
 BROWSER_URL="http://localhost:8000/zundamon.html"
 
-# gfx1151 (Ryzen AI Max+ 395) 向け ROCm env。
-export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-11.5.1}"
+# gfx1151 (Ryzen AI Max+ 395) 向け ROCm env (ROCm 7.14 / Ubuntu 26.04)。
+# HSA_OVERRIDE_GFX_VERSION は設定しない。
+# repo.amd.com の gfx1151 wheel も llama.cpp も gfx1151 ネイティブビルドなので
+# override すると壊れる（shell profile 等で export されている場合に備えて unset）。
+unset HSA_OVERRIDE_GFX_VERSION
 export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 export HIP_VISIBLE_DEVICES="${HIP_VISIBLE_DEVICES:-0}"
 export AMDGPU_TARGETS="${AMDGPU_TARGETS:-gfx1151}"
@@ -92,6 +99,16 @@ command -v google-chrome >/dev/null || warn "google-chrome が見つかりませ
 [[ -x "$EARTH_CONTROLLER_DIR/run.sh" ]] || die "earth-controller/run.sh がありません"
 [[ -x "$TOUR_DIR/run.sh"          ]] || die "tour/run.sh がありません"
 
+# three-vrm は aiohttp に依存する。Ubuntu 26.04 の system python3 (3.14) には aiohttp が
+# 入っていないため、aiohttp を持つ python を venv から探す（WhisperX venv → earth-controller/.venv）。
+THREE_VRM_PY=""
+for cand in "${WHISPERX_VENV}/bin/python" "${EARTH_CONTROLLER_DIR}/.venv/bin/python" "$(command -v python3 || true)"; do
+    [[ -n "$cand" && -x "$cand" ]] || continue
+    if "$cand" -c 'import aiohttp' >/dev/null 2>&1; then THREE_VRM_PY="$cand"; break; fi
+done
+[[ -n "$THREE_VRM_PY" ]] || die "aiohttp 入りの python が見つかりません (例: VIRTUAL_ENV=${WHISPERX_VENV} uv pip install aiohttp)"
+log "three-vrm python: ${THREE_VRM_PY}"
+
 # earth-controller は headed Chrome を出すため、DISPLAY が実在しないと起動できない。
 # 未設定時の既定 :10.0 がこのマシンに無く Earth 背景が出ない事故があったので fail-fast にする。
 DISPLAY_NUM="${DISPLAY#:}"; DISPLAY_NUM="${DISPLAY_NUM%%.*}"
@@ -128,8 +145,7 @@ tmux new-session -d -s "$SESSION" -n voicevox \
 wait_http "VOICEVOX" "http://localhost:50021/version" 60
 
 # ---- 2. llama-server ----------------------------------------------------
-LLAMA_CMD="HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION} \
-ROCM_PATH=${ROCM_PATH} HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES} \
+LLAMA_CMD="ROCM_PATH=${ROCM_PATH} HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES} \
 LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
 ${LLAMA_BIN} -m ${QWEN_MODEL} --host ${LLAMA_HOST} --port ${LLAMA_PORT} -ngl ${LLAMA_NGL} -c ${LLAMA_CTX} --parallel ${LLAMA_PARALLEL} -fit off"
 new_window "llama" "$LLAMA_CMD"
@@ -168,7 +184,7 @@ for i in $(seq 1 60); do
 done
 
 # ---- 6. three-vrm -------------------------------------------------------
-new_window "three-vrm" "cd ${THREE_VRM_DIR} && python3 server.py"
+new_window "three-vrm" "cd ${THREE_VRM_DIR} && ${THREE_VRM_PY} server.py"
 wait_http "three-vrm" "http://localhost:8000/status" 30
 
 # ---- 7. tour サービス (port 8003) --------------------------------------

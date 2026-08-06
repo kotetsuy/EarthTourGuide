@@ -93,9 +93,38 @@ The Phase 0 spike (`earth-controller/SPIKE_FINDINGS.md`) compared two methods:
   Tokyo→Sydney: a continuous ~6 s "zoom out → cross globe → zoom in" arc.
   **Adopted as the canonical flyTo method.**
 
-The search box lives deep in shadow DOM, so `controller.py`'s `fly_to()` walks
-`document` recursively for the first `input/textarea`, focuses it via the `/`
-shortcut, then types. After arrival `dismiss()` (Escape) closes the info panel.
+The search box lives deep in shadow DOM **and its `input` is not created until
+`/` is pressed**. The original approach ("walk `document` for the first
+`input/textarea`") breaks after the first flight: Earth leaves *invisible*
+inputs in the DOM, so later flights type into a hidden element — the old query
+stays in the box, Enter fires a plain search, and the camera never moves.
+`fly_to()` therefore verifies every step instead of fire-and-forgetting:
+
+1. **Confirm we are on the globe** (`ensure_globe()`). Earth sometimes lands on
+   its "Map projects" manager screen, which *also* has a search box — search
+   there and the text goes in while the camera stays put. If the URL carries no
+   camera state, reload the home position to recover.
+2. Escape to close leftover panels, `/` to open search, and type only into the
+   **`activeElement` right after that** (walking shadow roots). Clear with real
+   key events (Ctrl+A, Delete) — setting `.value=''` leaves Earth's internal
+   search state stale and the old query gets appended to.
+3. **Read the value back** after typing; if characters were dropped (typing
+   races Earth's autocomplete re-render), retry with `keyboard.insert_text()`.
+4. **Verify arrival** after Enter: camera distance must fall below 1,000 km
+   *and* actually differ from the pre-flight position (a stale URL would
+   otherwise read as a false arrival).
+5. If every attempt fails, fall back to `page.goto` on
+   `earth.google.com/web/search/<place>` — a teleport, but the exhibition never
+   stalls silently.
+
+After arrival `dismiss()` (Escape) closes the info panel.
+
+Startup gets the same treatment. The old fixed 13 s WASM-boot wait was a race:
+under a cold `start_all.sh`, llama's 22 GB model load steals enough CPU that
+Earth isn't up in 13 s, and every later command lands on a half-booted app.
+`goto_home()` now waits until the URL both reports the camera at the home
+position and carries the `/data=` suffix Earth appends once initialized,
+reloading up to 3 times.
 
 ### CDP screencast
 

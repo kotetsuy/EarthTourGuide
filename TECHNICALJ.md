@@ -30,7 +30,7 @@ earth-controller (Playwright + system Chrome + CDP)
 
 音声対話（AIassistant から流用、🎤 割り込み）:
    Browser 🎤 → three-vrm /voice_chat_speak_stream
-            → ttllm(8001): WhisperX(STT) + llama-server(8080, Qwen3.6)
+            → ttllm(8001): WhisperX(STT) + llama-server(9931, Qwen3.6)
             → 文境界で分割 → VOICEVOX(50021) → WS で audio+visemes を push
             └─ transcript に移動・案内の意図があれば:
                ttllm /chat で行き先を抽出 → earth-bridge /control flyto
@@ -42,7 +42,7 @@ earth-controller (Playwright + system Chrome + CDP)
 | サービス | Port | 役割 | 形態 |
 | --- | --- | --- | --- |
 | VOICEVOX Engine | 50021 | TTS（CPU 推論） | symlink |
-| llama-server | 8080 | Qwen3.6 推論（MTP） | symlink(bin) |
+| llama-server | 9931 | Qwen3.6 推論（MTP） | symlink(bin) |
 | ttllm | 8001 | WhisperX(STT) + llama bridge（FastAPI） | symlink |
 | three-vrm | 8000 | VRM ビューア + 発話配信（aiohttp） | **コピー** |
 | earth-bridge | 8002 | Earth フレーム中継ハブ（aiohttp WS） | 新規 |

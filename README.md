@@ -117,7 +117,7 @@ export DISPLAY=:0           # for headed Chrome (adjust to your env)
 `start_all.sh` starts 7 services in the tmux session `earthtour`, waiting on each
 health check before the next:
 
-1. VOICEVOX (docker, 50021) → 2. llama-server (8080) → 3. ttllm (8001)
+1. VOICEVOX (docker, 50021) → 2. llama-server (9931) → 3. ttllm (8001)
 → 4. earth-bridge (8002) → 5. earth-controller (headed Chrome driving Earth)
 → 6. three-vrm (8000) → 7. tour (8003); then Chrome auto-opens the VRM page.
 

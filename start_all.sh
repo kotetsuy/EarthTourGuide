@@ -4,7 +4,7 @@
 #
 # 起動順:
 #   1. VOICEVOX (docker)              :50021
-#   2. llama-server (qwen3.6)         :8080
+#   2. llama-server (qwen3.6)         :9931
 #   3. ttllm (WhisperX ↔ llama)       :8001  → /warmup 叩く
 #   4. earth-bridge (フレーム中継)    :8002
 #   5. earth-controller (Earth 操作 + screencast)   ← bridge にフレーム供給
@@ -27,7 +27,11 @@ ROOT="/home/$USER/EarthTourGuide"
 LLAMA_BIN="/home/$USER/llama.cpp/build/bin/llama-server"
 QWEN_MODEL="/home/$USER/AIassistant/qwen3.6/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
 LLAMA_HOST="127.0.0.1"
-LLAMA_PORT="8080"
+# ttllm 側 (AIassistant/ttllm を symlink で共有している) の LLAMA_SERVER_URL 既定値が
+# 2026-08-16 に 8080 → 9931 に変わったので、こちらも合わせる。ずれていると STT は
+# 通るのに LLM に到達できず「応答なし」になる。上流 ggml-org/llama.cpp#26508 の予告に
+# 先回りした変更で、AIassistant 側は 3764957 で対応済み。
+LLAMA_PORT="9931"
 LLAMA_CTX="8192"
 LLAMA_NGL="99"
 # 並列スロット数。2 にすると音声コマンドの行き先抽出(短い /chat)を

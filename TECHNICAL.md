@@ -30,7 +30,7 @@ Tour progression (orchestrator):
 
 Voice dialogue (reused from AIassistant, 🎤 interrupt):
    Browser 🎤 → three-vrm /voice_chat_speak_stream
-            → ttllm(8001): WhisperX (STT) + llama-server(8080, Qwen3.6)
+            → ttllm(8001): WhisperX (STT) + llama-server(9931, Qwen3.6)
             → split at sentence boundaries → VOICEVOX(50021) → WS push audio+visemes
             └─ on transcript, if it carries a "go/guide" intent:
                ttllm /chat extracts the place → earth-bridge /control flyto
@@ -42,7 +42,7 @@ Voice dialogue (reused from AIassistant, 🎤 interrupt):
 | Service | Port | Role | Form |
 | --- | --- | --- | --- |
 | VOICEVOX Engine | 50021 | TTS (CPU) | symlink |
-| llama-server | 8080 | Qwen3.6 inference (MTP) | symlink (bin) |
+| llama-server | 9931 | Qwen3.6 inference (MTP) | symlink (bin) |
 | ttllm | 8001 | WhisperX (STT) + llama bridge (FastAPI) | symlink |
 | three-vrm | 8000 | VRM viewer + speech delivery (aiohttp) | **copy** |
 | earth-bridge | 8002 | Earth frame relay hub (aiohttp WS) | new |

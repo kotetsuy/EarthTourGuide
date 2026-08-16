@@ -114,7 +114,7 @@ export DISPLAY=:0           # ヘッド付き Chrome 用（環境に合わせて
 `start_all.sh` は tmux セッション `earthtour` に以下 7 サービスを順に起動し、
 各ヘルスチェックを待ってから次へ進みます。
 
-1. VOICEVOX (docker, 50021) → 2. llama-server (8080) → 3. ttllm (8001)
+1. VOICEVOX (docker, 50021) → 2. llama-server (9931) → 3. ttllm (8001)
 → 4. earth-bridge (8002) → 5. earth-controller（headed Chrome で Earth 操作）
 → 6. three-vrm (8000) → 7. tour (8003)、最後に Chrome で VRM 画面を自動オープン。
 

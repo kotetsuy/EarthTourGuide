@@ -344,8 +344,9 @@ so a 🎤 question naturally interrupts a running tour.
   `torchaudio==2.8.0a0+rocm7.12.0` from `repo.amd.com/rocm/whl/gfx1151/`. The generic
   `whl-multi-arch` build fails at runtime with `hipErrorInvalidImage`
   (`kpack_load_code_object failed with error: 13`) on **every GPU op**. torch bundles its own
-  ROCm (`rocm-sdk-libraries-gfx1151`, 7.12) alongside the system ROCm 7.14 used by CTranslate2;
-  they coexist in one process as long as `LD_LIBRARY_PATH` includes `/opt/rocm/lib`.
+  ROCm (`rocm-sdk-libraries-gfx1151`, 7.12), which is retained with the system ROCm 10 SDK.
+  CTranslate2 can reuse torch's loaded runtime; verify actual library paths with
+  `ttllm/verify_rocm.py` rather than assuming it uses the system SDK.
 - **torch must be imported before ctranslate2/whisperx** (`ttllm/server.py` does this at the
   top). The other order leaves torch's bundled `libhipblaslt.so.1` unable to resolve rocRoller
   symbols (`OSError: undefined symbol: _ZN9rocRoller...`).
@@ -355,7 +356,8 @@ so a 🎤 question naturally interrupts a running tour.
   `start_all.sh` unsets it.
 - **three-vrm must run under a venv python**: Ubuntu 26.04's system python (3.14) has no
   `aiohttp`. `start_all.sh` resolves the first python that can import it
-  (`~/whisperx/whisperX-rocm/.venv` → `earth-controller/.venv` → `python3`) and dies early if
+  (`TTLLM_VENV` (default: `ttllm/.venv`) → `WHISPERX_VENV`
+  (default: `~/whisperx/whisperX-rocm/.venv`) → `earth-controller/.venv` → `python3`) and dies early if
   none does.
 - WhisperX is **unstable past 60 s** of audio on ROCm (VAD caps at 55 s).
 - VOICEVOX runs on **CPU** (GPU is taken by LLM/STT); long replies are TTS-bound.

@@ -109,13 +109,13 @@ command -v google-chrome >/dev/null || warn "google-chrome が見つかりませ
 [[ -x "$TOUR_DIR/run.sh"          ]] || die "tour/run.sh がありません"
 
 # three-vrm は aiohttp に依存する。Ubuntu 26.04 の system python3 (3.14) には aiohttp が
-# 入っていないため、aiohttp を持つ python を venv から探す（WhisperX venv → earth-controller/.venv）。
+# 入っていないため、aiohttp を持つ python を venv から探す（共用 STT venv → WhisperX venv → earth-controller/.venv）。
 THREE_VRM_PY=""
 for cand in "${TTLLM_VENV}/bin/python" "${WHISPERX_VENV}/bin/python" "${EARTH_CONTROLLER_DIR}/.venv/bin/python" "$(command -v python3 || true)"; do
     [[ -n "$cand" && -x "$cand" ]] || continue
     if "$cand" -c 'import aiohttp' >/dev/null 2>&1; then THREE_VRM_PY="$cand"; break; fi
 done
-[[ -n "$THREE_VRM_PY" ]] || die "aiohttp 入りの python が見つかりません (例: VIRTUAL_ENV=${WHISPERX_VENV} uv pip install aiohttp)"
+[[ -n "$THREE_VRM_PY" ]] || die "aiohttp 入りの python が見つかりません (例: VIRTUAL_ENV=${TTLLM_VENV} uv pip install aiohttp)"
 log "three-vrm python: ${THREE_VRM_PY}"
 
 # earth-controller は headed Chrome を出すため、DISPLAY が実在しないと起動できない。

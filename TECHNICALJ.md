@@ -1,5 +1,8 @@
 # EarthTourGuide — 技術解説（日本語）
 
+> ROCm 10 移行: `start_all.sh` の既定 SDK は `/opt/rocm/core-10.0`。選択した環境を各 tmux ウィンドウへ明示的に渡します。STT は `TTLLM_VENV`（既定 `ttllm/.venv`）を使用。以下の ROCm 7 / PyTorch の記述は既存 STT 依存の説明であり、ROCm 10 版ホイールへの更新を意味しません。
+
+
 セットアップ・実行手順は **[READMEJ.md](READMEJ.md)** を参照。
 本書は**仕組みと設計判断**を説明します。English: [TECHNICAL.md](TECHNICAL.md)。
 

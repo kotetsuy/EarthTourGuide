@@ -22,10 +22,10 @@ export PULSE_SERVER="${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native}"
 export DISPLAY="${DISPLAY:-:0}"
 
 SESSION="earthtour"
-ROOT="/home/$USER/EarthTourGuide"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-LLAMA_BIN="/home/$USER/llama.cpp/build/bin/llama-server"
-QWEN_MODEL="/home/$USER/AIassistant/qwen3.6/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+LLAMA_BIN="${LLAMA_BIN:-$HOME/llama.cpp/build/bin/llama-server}"
+QWEN_MODEL="${QWEN_MODEL:-${ROOT}/qwen3.6/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf}"
 LLAMA_HOST="127.0.0.1"
 # ttllm 側 (AIassistant/ttllm を symlink で共有している) の LLAMA_SERVER_URL 既定値が
 # 2026-08-16 に 8080 → 9931 に変わったので、こちらも合わせる。ずれていると STT は
@@ -48,21 +48,20 @@ EARTH_BRIDGE_DIR="${ROOT}/earth-bridge"
 EARTH_CONTROLLER_DIR="${ROOT}/earth-controller"
 TOUR_DIR="${ROOT}/tour"
 
-# WhisperX-ROCm の venv (ttllm と共有)。Ubuntu 26.04 更新時に旧 ~/AIzunda 側の venv が
-# 壊れたため ~/whisperx に統一（ttllm/run.sh の既定と揃える）。
-WHISPERX_VENV="${WHISPERX_VENV:-/home/$USER/whisperx/whisperX-rocm/.venv}"
+# 共有先 ttllm/run.sh と同じ NeMo / WhisperX 共用環境。
+export TTLLM_VENV="${TTLLM_VENV:-${ROOT}/ttllm/.venv}"
+WHISPERX_VENV="${WHISPERX_VENV:-$HOME/whisperx/whisperX-rocm/.venv}"
 
 BROWSER_URL="http://localhost:8000/zundamon.html"
 
-# gfx1151 (Ryzen AI Max+ 395) 向け ROCm env (ROCm 7.14 / Ubuntu 26.04)。
-# HSA_OVERRIDE_GFX_VERSION は設定しない。
-# repo.amd.com の gfx1151 wheel も llama.cpp も gfx1151 ネイティブビルドなので
-# override すると壊れる（shell profile 等で export されている場合に備えて unset）。
+# ROCm 10 の SDK を選択。別配置の場合は ROCM_PATH で指定する。
+# gfx1151 ネイティブビルドにはアーキテクチャの偽装は不要。
 unset HSA_OVERRIDE_GFX_VERSION
-export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
+export ROCM_PATH="${ROCM_PATH:-/opt/rocm/core-10.0}"
 export HIP_VISIBLE_DEVICES="${HIP_VISIBLE_DEVICES:-0}"
 export AMDGPU_TARGETS="${AMDGPU_TARGETS:-gfx1151}"
-export LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib:/opt/rocm/lib/llvm/lib:${LD_LIBRARY_PATH:-}"
+export PATH="${ROCM_PATH}/bin:${PATH}"
+export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${ROCM_PATH}/lib/llvm/lib:/usr/local/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 # ---- helpers ------------------------------------------------------------
 log()  { printf '\033[1;34m[launch]\033[0m %s\n' "$*"; }
@@ -86,10 +85,16 @@ wait_http() {
 new_window() {
     local name="$1" cmd="$2"
     tmux new-window -t "$SESSION" -n "$name"
-    tmux send-keys -t "${SESSION}:${name}" "$cmd" C-m
+    # 既存 tmux サーバや shell profile の古い環境を起動直前に上書きする。
+    local runtime_env
+    printf -v runtime_env 'unset HSA_OVERRIDE_GFX_VERSION; export ROCM_PATH=%q HIP_VISIBLE_DEVICES=%q AMDGPU_TARGETS=%q LD_LIBRARY_PATH=%q PATH=%q TTLLM_VENV=%q; ' \
+        "$ROCM_PATH" "$HIP_VISIBLE_DEVICES" "$AMDGPU_TARGETS" "$LD_LIBRARY_PATH" "$PATH" "$TTLLM_VENV"
+    tmux send-keys -t "${SESSION}:${name}" "${runtime_env}${cmd}" C-m
 }
 
 # ---- preflight ----------------------------------------------------------
+[[ -f "${ROCM_PATH}/lib/libamdhip64.so" ]] || die "ROCm SDK が見つかりません: ${ROCM_PATH} (ROCM_PATH を指定してください)"
+[[ -x "${TTLLM_VENV}/bin/python" ]] || die "ttllm の共用 venv がありません: ${TTLLM_VENV}"
 command -v tmux          >/dev/null || die "tmux がありません"
 command -v docker        >/dev/null || die "docker がありません"
 command -v curl          >/dev/null || die "curl がありません"
@@ -106,7 +111,7 @@ command -v google-chrome >/dev/null || warn "google-chrome が見つかりませ
 # three-vrm は aiohttp に依存する。Ubuntu 26.04 の system python3 (3.14) には aiohttp が
 # 入っていないため、aiohttp を持つ python を venv から探す（WhisperX venv → earth-controller/.venv）。
 THREE_VRM_PY=""
-for cand in "${WHISPERX_VENV}/bin/python" "${EARTH_CONTROLLER_DIR}/.venv/bin/python" "$(command -v python3 || true)"; do
+for cand in "${TTLLM_VENV}/bin/python" "${WHISPERX_VENV}/bin/python" "${EARTH_CONTROLLER_DIR}/.venv/bin/python" "$(command -v python3 || true)"; do
     [[ -n "$cand" && -x "$cand" ]] || continue
     if "$cand" -c 'import aiohttp' >/dev/null 2>&1; then THREE_VRM_PY="$cand"; break; fi
 done
@@ -149,9 +154,8 @@ tmux new-session -d -s "$SESSION" -n voicevox \
 wait_http "VOICEVOX" "http://localhost:50021/version" 60
 
 # ---- 2. llama-server ----------------------------------------------------
-LLAMA_CMD="ROCM_PATH=${ROCM_PATH} HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES} \
-LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
-${LLAMA_BIN} -m ${QWEN_MODEL} --host ${LLAMA_HOST} --port ${LLAMA_PORT} -ngl ${LLAMA_NGL} -c ${LLAMA_CTX} --parallel ${LLAMA_PARALLEL} -fit off"
+printf -v LLAMA_CMD '%q -m %q --host %q --port %q -ngl %q -c %q --parallel %q -fit off' \
+    "$LLAMA_BIN" "$QWEN_MODEL" "$LLAMA_HOST" "$LLAMA_PORT" "$LLAMA_NGL" "$LLAMA_CTX" "$LLAMA_PARALLEL"
 new_window "llama" "$LLAMA_CMD"
 wait_http "llama-server" "http://${LLAMA_HOST}:${LLAMA_PORT}/health" 600
 

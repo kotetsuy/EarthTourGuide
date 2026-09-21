@@ -15,15 +15,14 @@ live exhibition use, so **stability and visual polish come first**.
 | Item | Requirement |
 | --- | --- |
 | OS | Ubuntu 26.04 (resolute) |
-| GPU / ROCm | AMD gfx1151 (e.g. Ryzen AI Max+ 395) / ROCm 7.14.0 (`/opt/rocm`) |
+| GPU / ROCm | AMD gfx1151 (e.g. Ryzen AI Max+ 395) / ROCm 10.0 (`/opt/rocm/core-10.0`) |
 | Python | system 3.14 / each venv is 3.12 (pinned via `.python-version`) |
 | Commands | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
 | Display | a `DISPLAY` for headed Chrome (here: the local `:0`) |
 
-> On Ubuntu 26.04, ROCm 7.14 installs natively via apt
-> (`amdrocm-core-sdk7.14-gfx1151` from `repo.amd.com/rocm/packages-multi-arch/ubuntu2604`).
-> The in-tree amdgpu kernel driver already supports gfx1151, so DKMS / `amdgpu-install`
-> are not needed.
+> See AMD's [ROCm 10 transition guide](https://rocm.docs.amd.com/en/develop/about/transition-guide-TheRock.html).
+> This machine uses `/opt/rocm/core-10.0`; override `ROCM_PATH` for another installation.
+> Use llama.cpp built for ROCm 10 and gfx1151.
 
 > **Do not set `HSA_OVERRIDE_GFX_VERSION`.** The gfx1151 PyTorch wheels,
 > CTranslate2-ROCm and llama.cpp are all built natively for gfx1151, so overriding the
@@ -51,14 +50,13 @@ cd AIassistant
 
 When `./start_all.sh` works inside AIassistant on its own, you're ready.
 
-> **ROCm 7.14 notes** (see AIassistant's README for the full steps):
+> **Shared STT environment (existing ROCm 7 dependencies)** (see AIassistant's README for the full steps):
 > - Install PyTorch from the **gfx1151-specific index** (`repo.amd.com/rocm/whl/gfx1151/`):
 >   `torch==2.8.0+rocm7.12.0` / `torchaudio==2.8.0a0+rocm7.12.0`. The generic
 >   `whl-multi-arch` build fails at runtime with `hipErrorInvalidImage` on every GPU op.
 >   Pin **torchaudio to < 2.9** (pyannote uses `torchaudio.info` / `AudioMetaData`).
-> - The WhisperX venv lives at `~/whisperx/whisperX-rocm/.venv` (the default in
->   `ttllm/run.sh`; override with `WHISPERX_VENV`). The old `~/AIzunda/whisperX-rocm`
->   broke when the OS moved to system python 3.14.
+> - STT uses the shared NeMo / WhisperX environment at `ttllm/.venv`; override with `TTLLM_VENV`.
+> - This change does not upgrade STT PyTorch to ROCm 10. The versions above describe the existing STT dependencies, not ROCm 10 wheels.
 > - `ttllm/server.py` imports `torch` at the very top — it must load before ctranslate2,
 >   otherwise STT dies with `undefined symbol: _ZN9rocRoller...`.
 
@@ -98,11 +96,11 @@ cd ..
 
 `three-vrm` needs aiohttp too, and Ubuntu 26.04's system python3 (3.14) doesn't have it.
 `start_all.sh` picks the first python that can `import aiohttp`, trying
-`~/whisperx/whisperX-rocm/.venv` → `earth-controller/.venv` → `python3`, and aborts before
+`ttllm/.venv` (`TTLLM_VENV`) → `~/whisperx/whisperX-rocm/.venv` → `earth-controller/.venv` → `python3`, and aborts before
 launching if none works. In that case install it:
 
 ```bash
-VIRTUAL_ENV=~/whisperx/whisperX-rocm/.venv uv pip install aiohttp
+VIRTUAL_ENV="${TTLLM_VENV:-$PWD/ttllm/.venv}" uv pip install aiohttp
 ```
 
 ---

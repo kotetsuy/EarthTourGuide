@@ -1,5 +1,8 @@
 # EarthTourGuide — Technical Overview
 
+> ROCm 10 migration: `start_all.sh` now defaults to `/opt/rocm/core-10.0` and forwards the selected environment into each tmux window. STT uses `TTLLM_VENV` (default: `ttllm/.venv`). ROCm 7 / PyTorch notes below describe the existing STT dependencies, not a ROCm 10 wheel upgrade.
+
+
 For setup and run steps, see **[README.md](README.md)**. This document explains
 **how it works and why**. 日本語: [TECHNICALJ.md](TECHNICALJ.md)。
 

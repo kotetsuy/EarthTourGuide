@@ -14,14 +14,14 @@ Google Earth 上を巡りながら、VRM アバター（Koteko／ずんだもん
 | 項目 | 要件 |
 | --- | --- |
 | OS | Ubuntu 26.04 (resolute) |
-| GPU / ROCm | AMD gfx1151（Ryzen AI Max+ 395 等）/ ROCm 7.14.0 (`/opt/rocm`) |
+| GPU / ROCm | AMD gfx1151（Ryzen AI Max+ 395 等）/ ROCm 10.0 (`/opt/rocm/core-10.0`) |
 | Python | system 3.14 / 各 venv は 3.12（`.python-version` で固定） |
 | 必須コマンド | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
 | ディスプレイ | ヘッド付き Chrome を出す `DISPLAY`（本機はローカルの `:0`） |
 
-> ROCm 7.14 は Ubuntu 26.04 なら apt でネイティブ導入できます
-> （`repo.amd.com/rocm/packages-multi-arch/ubuntu2604` の `amdrocm-core-sdk7.14-gfx1151`）。
-> カーネル同梱 amdgpu が gfx1151 対応済みなので DKMS / `amdgpu-install` は不要です。
+> ROCm 10 の配置・環境変数は [AMD の移行ガイド](https://rocm.docs.amd.com/en/develop/about/transition-guide-TheRock.html)を参照。
+> 本機の SDK は `/opt/rocm/core-10.0`。別の配置では `ROCM_PATH` で上書きします。
+> llama.cpp は ROCm 10 / gfx1151 向けにビルド済みのものを使ってください。
 
 > **`HSA_OVERRIDE_GFX_VERSION` は設定しないこと。** gfx1151 版 PyTorch ホイール・
 > CTranslate2-ROCm・llama.cpp はすべて gfx1151 ネイティブビルドなので、arch を override
@@ -49,13 +49,13 @@ cd AIassistant
 
 AIassistant 単体で `./start_all.sh` が通る状態になっていれば OK です。
 
-> **ROCm 7.14 環境での要点**（詳細は AIassistant の READMEJ）:
+> **STT 共用環境の要点（旧 ROCm 7 系の依存を維持）**（詳細は AIassistant の READMEJ）:
 > - PyTorch は **gfx1151 専用インデックス** (`repo.amd.com/rocm/whl/gfx1151/`) の
 >   `torch==2.8.0+rocm7.12.0` / `torchaudio==2.8.0a0+rocm7.12.0` を使う。汎用 `whl-multi-arch`
 >   版は実行時に `hipErrorInvalidImage` で全 GPU 操作が落ちる。**torchaudio は 2.9 未満**
 >   （pyannote が `torchaudio.info` / `AudioMetaData` を使う）。
-> - WhisperX venv は `~/whisperx/whisperX-rocm/.venv`（`ttllm/run.sh` の既定。`WHISPERX_VENV`
->   で上書き可）。旧 `~/AIzunda/whisperX-rocm` は OS 更新（system python 3.14）で壊れたため使わない。
+> - STT は `ttllm/.venv` の NeMo / WhisperX 共用環境を使用します（`TTLLM_VENV` で上書き可）。
+> - この変更は STT の PyTorch を ROCm 10 版に更新しません。上記バージョンは既存環境の依存であり、ROCm 10 版の指定ではありません。
 > - `ttllm/server.py` は先頭で `import torch` する（ctranslate2 より先に読まないと
 >   `undefined symbol: _ZN9rocRoller...` で落ちる）。
 
@@ -94,12 +94,12 @@ cd ..
 ```
 
 `three-vrm` も aiohttp が必要ですが、Ubuntu 26.04 の system python3 (3.14) には入っていません。
-`start_all.sh` は `~/whisperx/whisperX-rocm/.venv` → `earth-controller/.venv` → `python3` の順に
+`start_all.sh` は `ttllm/.venv`（`TTLLM_VENV`）→ `~/whisperx/whisperX-rocm/.venv` → `earth-controller/.venv` → `python3` の順に
 **aiohttp を持つ python** を探して three-vrm を起動します。どこにも無ければ起動前に停止するので、
 その場合は venv に入れてください:
 
 ```bash
-VIRTUAL_ENV=~/whisperx/whisperX-rocm/.venv uv pip install aiohttp
+VIRTUAL_ENV="${TTLLM_VENV:-$PWD/ttllm/.venv}" uv pip install aiohttp
 ```
 
 ---

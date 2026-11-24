@@ -15,13 +15,13 @@ live exhibition use, so **stability and visual polish come first**.
 | Item | Requirement |
 | --- | --- |
 | OS | Ubuntu 26.04 (resolute) |
-| GPU / ROCm | AMD gfx1151 (e.g. Ryzen AI Max+ 395) / ROCm 10.0 (`/opt/rocm/core-10.0`) |
+| GPU / ROCm | AMD gfx1151 (e.g. Ryzen AI Max+ 395) / ROCm 10.2 (`/opt/rocm/core-10.2`) |
 | Python | system 3.14 / each venv is 3.12 (pinned via `.python-version`) |
 | Commands | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
 | Display | a `DISPLAY` for headed Chrome (here: the local `:0`) |
 
 > See AMD's [ROCm 10 transition guide](https://rocm.docs.amd.com/en/develop/about/transition-guide-TheRock.html).
-> This machine uses `/opt/rocm/core-10.0`; override `ROCM_PATH` for another installation.
+> This machine uses `/opt/rocm/core-10.2`; override `ROCM_PATH` for another installation.
 > Use llama.cpp built for ROCm 10 and gfx1151.
 
 > **Do not set `HSA_OVERRIDE_GFX_VERSION`.** The gfx1151 PyTorch wheels,

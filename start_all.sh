@@ -57,7 +57,7 @@ BROWSER_URL="http://localhost:8000/zundamon.html"
 # ROCm 10 の SDK を選択。別配置の場合は ROCM_PATH で指定する。
 # gfx1151 ネイティブビルドにはアーキテクチャの偽装は不要。
 unset HSA_OVERRIDE_GFX_VERSION
-export ROCM_PATH="${ROCM_PATH:-/opt/rocm/core-10.0}"
+export ROCM_PATH="${ROCM_PATH:-/opt/rocm/core-10.2}"
 export HIP_VISIBLE_DEVICES="${HIP_VISIBLE_DEVICES:-0}"
 export AMDGPU_TARGETS="${AMDGPU_TARGETS:-gfx1151}"
 export PATH="${ROCM_PATH}/bin:${PATH}"

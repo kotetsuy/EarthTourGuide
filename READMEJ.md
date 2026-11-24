@@ -14,13 +14,13 @@ Google Earth 上を巡りながら、VRM アバター（Koteko／ずんだもん
 | 項目 | 要件 |
 | --- | --- |
 | OS | Ubuntu 26.04 (resolute) |
-| GPU / ROCm | AMD gfx1151（Ryzen AI Max+ 395 等）/ ROCm 10.0 (`/opt/rocm/core-10.0`) |
+| GPU / ROCm | AMD gfx1151（Ryzen AI Max+ 395 等）/ ROCm 10.2 (`/opt/rocm/core-10.2`) |
 | Python | system 3.14 / 各 venv は 3.12（`.python-version` で固定） |
 | 必須コマンド | `git` `tmux` `docker` `curl` `google-chrome` `uv` |
 | ディスプレイ | ヘッド付き Chrome を出す `DISPLAY`（本機はローカルの `:0`） |
 
 > ROCm 10 の配置・環境変数は [AMD の移行ガイド](https://rocm.docs.amd.com/en/develop/about/transition-guide-TheRock.html)を参照。
-> 本機の SDK は `/opt/rocm/core-10.0`。別の配置では `ROCM_PATH` で上書きします。
+> 本機の SDK は `/opt/rocm/core-10.2`。別の配置では `ROCM_PATH` で上書きします。
 > llama.cpp は ROCm 10 / gfx1151 向けにビルド済みのものを使ってください。
 
 > **`HSA_OVERRIDE_GFX_VERSION` は設定しないこと。** gfx1151 版 PyTorch ホイール・
